@@ -1,0 +1,180 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { STAT_KEYS } from '../js/api.js';
+
+// A minimal DOM harness exercises the real controller without a browser dependency.
+class Element {
+  constructor(tag = 'div') {
+    this.tagName = tag;
+    this.children = [];
+    this.attributes = new Map();
+    this.listeners = new Map();
+    this.dataset = {};
+    this.style = { setProperty(key, value) { this[key] = value; } };
+    this.value = '';
+    this.validity = { badInput: false };
+    this.parent = null;
+    this.content = '';
+  }
+  get textContent() { return this.content + this.children.map(child => child.textContent).join(' '); }
+  set textContent(value) { this.content = String(value); this.replaceChildren(); }
+  get isConnected() { return this === document.body || Boolean(this.parent?.isConnected); }
+  setAttribute(key, value) { this.attributes.set(key, value); }
+  removeAttribute(key) { this.attributes.delete(key); }
+  append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } }
+  replaceChildren(...children) {
+    for (const child of this.children) child.parent = null;
+    this.children = [];
+    this.append(...children);
+  }
+  addEventListener(event, callback) {
+    this.listeners.set(event, [...(this.listeners.get(event) || []), callback]);
+  }
+  async trigger(event) { await Promise.all((this.listeners.get(event) || []).map(callback => callback({ preventDefault() {} }))); }
+  focus() { document.activeElement = this; }
+  select() {}
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; }
+}
+
+function descendants(element) {
+  return [element, ...element.children.flatMap(descendants)];
+}
+
+test('UI handles debounce, Enter, stale responses, independent retries, validation, and clipboard fallback', async t => {
+  const original = Object.fromEntries(['document', 'navigator', 'fetch', 'setTimeout', 'clearTimeout'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const timers = new Map();
+  const nodes = Object.fromEntries(['dex-form', 'dex-input', 'input-error', 'results-grid', 'result-badge', 'results-status', 'empty-state'].map(id => [id, new Element()]));
+  const body = new Element('body');
+  body.append(...Object.values(nodes));
+  let copied = '';
+  const mockDocument = {
+    body, activeElement: body,
+    querySelector: selector => nodes[selector.slice(1)],
+    createElement: tag => new Element(tag),
+    execCommand: command => { assert.equal(command, 'copy'); copied = mockDocument.activeElement.value; return true; },
+  };
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: mockDocument });
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async () => { throw new Error('Denied'); } } } });
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay !== 250 && delay !== 2400) return original.setTimeout.value(callback, delay, ...args);
+    const id = Symbol();
+    timers.set(id, { callback, delay });
+    return id;
+  };
+  globalThis.clearTimeout = id => { if (!timers.delete(id)) original.clearTimeout.value(id); };
+  let releaseOld;
+  let pauseOne = true;
+  let failOne = false;
+  let calls = 0;
+  globalThis.fetch = async url => {
+    calls += 1;
+    const number = Number(url.match(/\/(\d+)\/$/)[1]);
+    if (url.includes('/pokemon/')) {
+      if (number === 1 && pauseOne) await new Promise(resolve => { releaseOld = resolve; });
+      if (number === 1 && failOne) return { ok: false, status: 404 };
+      return { ok: true, json: async () => ({
+        name: `pokemon-${number}`,
+        types: [{ slot: 1, type: { name: 'electric' } }],
+        abilities: [{ slot: 1, ability: { name: 'static' }, is_hidden: false }],
+        stats: STAT_KEYS.map(name => ({ stat: { name }, base_stat: 50 })),
+      }) };
+    }
+    if (url.includes('/pokemon-species/')) return { ok: true, json: async () => ({
+      names: [{ language: { name: 'en' }, name: `Pokémon ${number}` }],
+      evolution_chain: { url: `https://pokeapi.co/api/v2/evolution-chain/${number}/` },
+    }) };
+    return { ok: true, json: async () => ({ chain: { species: { name: `pokemon-${number}` }, evolves_to: [] } }) };
+  };
+  const settle = () => new Promise(setImmediate);
+  const flush = async delay => {
+    for (const [id, timer] of [...timers]) {
+      if (timer.delay === delay) { timers.delete(id); timer.callback(); }
+    }
+    await settle();
+  };
+  const input = nodes['dex-input'];
+  const grid = nodes['results-grid'];
+  const submit = async value => {
+    input.value = value;
+    await nodes['dex-form'].trigger('submit');
+    await settle();
+  };
+  try {
+    await import('../js/app.js');
+    assert.equal(calls, 0);
+    assert.equal(nodes['empty-state'].hidden, false);
+
+    await t.test('debounces input and ignores an older result after Enter submits a new number', async () => {
+      input.value = '1';
+      await input.trigger('input');
+      assert.equal(calls, 0);
+      await flush(250);
+      assert.equal(grid.children.length, 4);
+      await submit('2');
+      assert.equal(grid.children.length, 3);
+      const before = grid.textContent;
+      pauseOne = false;
+      failOne = true;
+      releaseOld();
+      await settle();
+      assert.equal(grid.textContent, before);
+      assert.match(nodes['results-status'].textContent, /3 loaded/);
+    });
+
+    await t.test('one failed card leaves others usable and retry recovers it', async () => {
+      await submit('1');
+      assert.match(nodes['results-status'].textContent, /3 loaded.*1 failed/);
+      const retry = descendants(grid).find(node => node.textContent === 'Retry Pokémon');
+      assert.ok(retry);
+      failOne = false;
+      await retry.trigger('click');
+      await settle();
+      assert.match(nodes['results-status'].textContent, /4 loaded/);
+      assert.equal(grid.children.length, 4);
+    });
+
+    await t.test('clipboard fallback copies the normalized summary and confirms briefly', async () => {
+      const copy = descendants(grid).find(node => node.className === 'copy-button');
+      copy.focus();
+      await copy.trigger('click');
+      assert.match(copied, /^#0001 Pokémon 1\nTypes: Electric\nAbilities: Static\nHidden ability: None\nBST: 300/);
+      assert.match(copied, /Evolution: Pokemon 1 does not evolve/);
+      assert.equal(mockDocument.activeElement, copy);
+      assert.equal(copy.dataset.copied, 'true');
+      await flush(2400);
+      assert.equal(copy.dataset.copied, undefined);
+    });
+
+    await t.test('native clipboard success and total clipboard failure give useful feedback', async () => {
+      const copy = descendants(grid).find(node => node.className === 'copy-button');
+      navigator.clipboard.writeText = async text => { copied = text; };
+      await copy.trigger('click');
+      assert.match(copied, /^#0001/);
+      assert.equal(copy.dataset.copied, 'true');
+      await flush(2400);
+      navigator.clipboard.writeText = async () => { throw new Error('Denied'); };
+      mockDocument.execCommand = () => false;
+      await copy.trigger('click');
+      assert.match(grid.textContent, /Copy was blocked/);
+      assert.equal(copy.disabled, false);
+      await flush(2400);
+    });
+
+    await t.test('invalid input clears results and clearing input restores the empty state', async () => {
+      for (const value of ['0', '1026', '1.5', '1e2']) {
+        await submit(value);
+        assert.equal(input.attributes.get('aria-invalid'), 'true');
+        assert.equal(grid.children.length, 0);
+        assert.match(nodes['input-error'].textContent, /1 to 1025/);
+      }
+      await submit('');
+      assert.equal(input.attributes.has('aria-invalid'), false);
+      assert.equal(nodes['empty-state'].hidden, false);
+    });
+  } finally {
+    for (const [key, descriptor] of Object.entries(original)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+});

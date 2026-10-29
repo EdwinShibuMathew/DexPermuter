@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="description" content="Shuffle Pokédex digits into your next Pokémon challenge. Compare types, abilities, stats, and evolutions, then copy a stream-ready summary.">
+    <title>DexPermuter — Shuffle your next challenge</title>
+    <link rel="stylesheet" href="./css/styles.css">
+    <script type="module" src="./js/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#results">Skip to results</a>
+    <header class="site-header shell">
+      <a class="brand" href="./" aria-label="DexPermuter home">
+        <span class="brand-mark" aria-hidden="true">↔</span>
+        <span>Dex<span class="accent">Permuter</span></span>
+      </a>
+      <span class="header-note">THE SHUFFLED DIGIT CHALLENGE TOOL</span>
+    </header>
+
+    <main class="shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> SMALL SHUFFLE. NEW POSSIBILITIES.</p>
+        <h1 id="page-title">Same digits.<br><span class="accent">Different destiny.</span></h1>
+        <p class="intro-copy">Turn one Pokédex number into your next challenge lineup.<br class="wide-only"> Every valid digit shuffle. All the details. Ready for your stream.</p>
+
+        <form id="dex-form" novalidate>
+          <label for="dex-input">YOUR STARTING POKÉDEX NUMBER</label>
+          <div class="input-wrap">
+            <span class="input-prefix" aria-hidden="true">#</span>
+            <input id="dex-input" name="dex" type="number" min="1" max="1025" step="1" inputmode="numeric" placeholder="e.g. 100" autocomplete="off" aria-describedby="input-hint input-error">
+            <button class="shuffle-button" type="submit" aria-label="Find digit permutations">Shuffle <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="input-meta">
+            <p id="input-hint">1–1025 · Updates as you type · Enter to shuffle</p>
+            <p id="input-error" class="error-text" role="alert"></p>
+          </div>
+        </form>
+
+        <div class="method-note">
+          <span class="pill">3-DIGIT + 4-DIGIT PADDING</span>
+          <p>One number, two ways to shuffle. <span class="example">1 → 001 + 0001 → 1, 10, 100, 1000</span></p>
+        </div>
+      </section>
+
+      <section id="results" class="results" aria-labelledby="results-heading" tabindex="-1">
+        <div class="results-header">
+          <h2 id="results-heading">Your possibilities <span id="result-badge" class="count-badge">0</span></h2>
+          <p id="results-status" role="status" aria-live="polite" aria-atomic="true">Enter a number to get started.</p>
+        </div>
+        <div id="results-grid" class="results-grid"></div>
+        <div id="empty-state" class="empty-state">
+          <span class="empty-symbol" aria-hidden="true">0 1 ↔ 1 0</span>
+          <h3>A new lineup is a few digits away.</h3>
+          <p>Enter a National Pokédex number above.<br>We’ll find the shuffles. You make the challenge.</p>
+        </div>
+      </section>
+
+      <aside class="data-note" aria-label="About these results">
+        <p>Results include your original number. Default Pokémon forms are shown. Evolution summaries include branches and regional conditions reported by PokéAPI; requirements can vary by game.</p>
+      </aside>
+    </main>
+
+    <footer class="site-footer shell">
+      <p>Made for your next “what if?”</p>
+      <p>Data from <a href="https://pokeapi.co/" target="_blank" rel="noopener noreferrer">PokéAPI ↗</a> · An unofficial fan project. Pokémon belongs to its respective owners.</p>
+    </footer>
+    <noscript><p class="noscript">DexPermuter needs JavaScript to generate permutations and load Pokémon data.</p></noscript>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "dexpermuter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A static Pokédex digit permutation tool for Pokémon challenge creators.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "serve": "npx --yes serve@14.2.4 . --listen 3000"
+  },
+  "license": "MIT"
+}
