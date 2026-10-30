@@ -33,6 +33,84 @@ async function downloadBackup(page, control = '#export-challenges') {
   return JSON.parse(await readFile(await download.path(), 'utf8'));
 }
 
+async function tabToShortlist(page, number = '#0001') {
+  const control = page.getByRole('button', { name: `Shortlist ${number}`, exact: true });
+  await page.getByLabel('YOUR STARTING POKÉDEX NUMBER').focus();
+  for (let step = 0; step < 25; step += 1) {
+    if (await control.evaluate(node => document.activeElement === node)) break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(control).toBeFocused();
+  await expect(control).toHaveCSS('outline-style', 'solid');
+  return control.elementHandle();
+}
+
+async function expectRetainedFocus(control) {
+  expect(await control.evaluate(node => node.isConnected && document.activeElement === node)).toBe(true);
+}
+
+test('keyboard shortlist focus survives loading to success and Space still saves the selection', async ({ page, api }) => {
+  api.hold(() => true);
+  await page.goto('./');
+  await submit(page, '1');
+  await expect.poll(() => api.calls.length).toBe(4);
+  await saveSearch(page, 'Keyboard success');
+  const control = await tabToShortlist(page);
+  await api.release();
+  await expect(page.locator('#results-status')).toContainText('4 loaded');
+  await expectRetainedFocus(control);
+  await expect(page.getByRole('button', { name: 'Shortlist #0001', exact: true })).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: 'Shortlist #0001', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect((await records(page))[0].selectedNumbers).toEqual([1]);
+  await expectRetainedFocus(control);
+});
+
+test('keyboard shortlist focus survives failure and retry without duplicating toggle handlers', async ({ page, api }) => {
+  api.hold(() => true);
+  api.respondOnce('pokemon/1/', { ...apiData('pokemon/1/'), stats: [] });
+  await page.goto('./');
+  await submit(page, '1');
+  await expect.poll(() => api.calls.length).toBe(4);
+  await saveSearch(page, 'Keyboard recovery');
+  const control = await tabToShortlist(page);
+  await api.release();
+  await expect(page.locator('#results-status')).toContainText('3 loaded · 1 failed');
+  await expectRetainedFocus(control);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Shortlist #0001', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect((await records(page))[0].selectedNumbers).toEqual([1]);
+
+  api.hold(resource => resource === 'pokemon/1/');
+  await page.getByRole('button', { name: 'Retry Pokémon', exact: true }).click();
+  await expect.poll(() => api.count('pokemon/1/')).toBe(2);
+  expect(await control.evaluate(node => node.isConnected)).toBe(true);
+  await tabToShortlist(page);
+  await expectRetainedFocus(control);
+  await api.release();
+  await expect(page.locator('#results-status')).toContainText('4 loaded');
+  await expectRetainedFocus(control);
+  await expect(page.getByRole('button', { name: 'Shortlist #0001', exact: true })).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: 'Shortlist #0001', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  expect((await records(page))[0].selectedNumbers).toEqual([]);
+  await expectRetainedFocus(control);
+});
+
+test('finishing held cards does not reclaim focus after the user returns to the input', async ({ page, api }) => {
+  api.hold(() => true);
+  await page.goto('./');
+  await submit(page, '1');
+  await expect.poll(() => api.calls.length).toBe(4);
+  const control = await tabToShortlist(page);
+  const input = page.getByLabel('YOUR STARTING POKÉDEX NUMBER');
+  await input.focus();
+  await api.release();
+  await expect(page.locator('#results-status')).toContainText('4 loaded');
+  await expect(input).toBeFocused();
+  expect(await control.evaluate(node => document.activeElement === node)).toBe(false);
+});
+
 test('saves, autosaves, and resumes a shortlist after returning without eager API traffic', async ({ page, api }, testInfo) => {
   await freezeTime(page);
   await page.goto('./');

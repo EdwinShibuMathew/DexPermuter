@@ -112,6 +112,7 @@ test('switching searches drops obsolete work and clearing cancels remaining requ
   api.hold(resource => old.includes(resource));
   await submit(page, '34');
   await expect(page.locator('#results-status')).toContainText('6 loaded');
+  await expect(page.getByLabel('YOUR STARTING POKÉDEX NUMBER')).toBeFocused();
   const obsolete = new Set([12, 21, 102, 120, 201, 210, 1002, 1020]);
   expect(api.calls.slice(4).some(resource => obsolete.has(Number(resource.split('/')[1])))).toBe(false);
   await expect.poll(async () => (await api.probe()).requests.filter(entry => entry.aborted).length).toBe(4);
@@ -135,6 +136,10 @@ test('switching searches drops obsolete work and clearing cancels remaining requ
   expect(api.calls).toHaveLength(searchStart + 4);
   expect(probe.requests.slice(requestStart)).toHaveLength(4);
   expect(probe.requests.slice(requestStart).every(entry => entry.done && entry.aborted)).toBe(true);
+  await api.release();
+  await expect(page.getByLabel('YOUR STARTING POKÉDEX NUMBER')).toBeFocused();
+  await expect(page.locator('.pokemon-card')).toHaveCount(0);
+  expect(api.calls).toHaveLength(searchStart + 4);
   await expect(page.locator('#results-status')).not.toContainText('failed');
 });
 
