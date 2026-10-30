@@ -1,5 +1,6 @@
 import { permuteDexNumber } from './permute.js';
 import { createApiClient, displayName } from './api.js';
+import { createChallengeWorkspace } from './challenge-ui.js';
 
 const TYPE_COLORS = {
   normal: '#A8A77A', fire: '#EE8130', water: '#6390F0', electric: '#F7D02C',
@@ -24,9 +25,34 @@ const grid = document.querySelector('#results-grid');
 const badge = document.querySelector('#result-badge');
 const status = document.querySelector('#results-status');
 const empty = document.querySelector('#empty-state');
+const cardContents = new WeakMap();
 let debounceTimer;
 let revision = 0;
 let currentSearch = null;
+let challengeWorkspace = null;
+challengeWorkspace = createChallengeWorkspace({
+  root: document.querySelector('#challenge-workspace'),
+  onResume(number) {
+    input.value = String(number);
+    revision += 1;
+    runSearch();
+    input.focus();
+  },
+  onSelectionChange: updateShortlist,
+});
+
+function updateShortlist() {
+  if (!challengeWorkspace || !currentSearch) return;
+  for (const [number, card] of currentSearch.cards) {
+    const selected = challengeWorkspace.isSelected(currentSearch.original, number);
+    card.dataset.shortlisted = String(selected);
+    const control = card.querySelector('.shortlist-button');
+    if (control) {
+      control.setAttribute('aria-pressed', String(selected));
+      control.textContent = selected ? '✓ Shortlisted' : '+ Shortlist';
+    }
+  }
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -43,17 +69,39 @@ function cardTop(number, original) {
   const top = element('div', 'card-top');
   top.append(element('span', 'dex-number', numberLabel(number)));
   if (number === original) top.append(element('span', 'original-badge', 'STARTING NUMBER'));
+  if (challengeWorkspace) {
+    const selected = challengeWorkspace.isSelected(original, number);
+    const control = element('button', 'shortlist-button', selected ? '✓ Shortlisted' : '+ Shortlist');
+    control.type = 'button';
+    control.setAttribute('aria-label', `Shortlist ${numberLabel(number)}`);
+    control.setAttribute('aria-pressed', String(selected));
+    control.addEventListener('click', () => {
+      if (currentSearch?.revision === revision && currentSearch.original === original) challengeWorkspace.shortlist(original, number);
+    });
+    top.append(control);
+  }
   return top;
 }
 
+function renderCardContent(card, number, original, ...children) {
+  let content = cardContents.get(card);
+  if (!content) {
+    content = element('div', 'card-content');
+    // Keep the header and its keyboard-focused shortlist control mounted across
+    // loading, success, failure, and retry. Only the details below it change.
+    card.append(cardTop(number, original), content);
+    cardContents.set(card, content);
+  }
+  content.replaceChildren(...children);
+}
+
 function renderLoading(card, number, original) {
-  card.replaceChildren(cardTop(number, original), element('h3', '', 'Loading Pokémon…'));
-  card.setAttribute('aria-label', `${numberLabel(number)} loading`);
-  card.setAttribute('aria-busy', 'true');
   const decoration = element('div');
   decoration.setAttribute('aria-hidden', 'true');
   decoration.append(element('div', 'loading-bar'), element('div', 'loading-bar short'));
-  card.append(decoration, element('p', 'loading-copy', 'Finding your next possibility.'));
+  renderCardContent(card, number, original, element('h3', '', 'Loading Pokémon…'), decoration, element('p', 'loading-copy', 'Finding your next possibility.'));
+  card.setAttribute('aria-label', `${numberLabel(number)} loading`);
+  card.setAttribute('aria-busy', 'true');
 }
 
 function readableTextColor(hex) {
@@ -196,10 +244,11 @@ function renderCard(card, data, search, retry) {
   card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
   card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || FALLBACK_TYPE_COLOR);
   const heading = element('h3', '', data.name);
-  card.replaceChildren(
-    cardTop(data.number, search.original), heading, renderTypes(data.types),
+  renderCardContent(
+    card, data.number, search.original, heading, renderTypes(data.types),
     renderAbilities(data), renderStats(data), renderEvolution(data, retry), ...renderCopyControls(data),
   );
+  updateShortlist();
 }
 
 function announce(search) {
@@ -217,6 +266,7 @@ async function loadCard(card, number, search) {
   search.states.set(number, 'loading');
   announce(search);
   renderLoading(card, number, search.original);
+  updateShortlist();
   const retry = () => loadCard(card, number, search);
   try {
     const data = await client.getPokemon(number, { signal: search.controller.signal });
@@ -231,9 +281,10 @@ async function loadCard(card, number, search) {
     const button = element('button', 'retry-button', 'Retry Pokémon');
     button.type = 'button';
     button.addEventListener('click', retry);
-    card.replaceChildren(cardTop(number, search.original), element('h3', '', 'Connection missed.'), element('p', 'card-error', error.message || 'Could not load this Pokémon.'), button);
+    renderCardContent(card, number, search.original, element('h3', '', 'Connection missed.'), element('p', 'card-error', error.message || 'Could not load this Pokémon.'), button);
     search.states.set(number, 'error');
   }
+  updateShortlist();
   announce(search);
 }
 
@@ -241,6 +292,13 @@ function runSearch() {
   clearTimeout(debounceTimer);
   const raw = input.value.trim();
   const badInput = input.validity.badInput;
+  const candidate = /^\d+$/.test(raw) && !badInput ? Number(raw) : null;
+  const validCandidate = Number.isInteger(candidate) && candidate >= 1 && candidate <= 1025 ? candidate : null;
+  if (challengeWorkspace && !challengeWorkspace.prepareSearch(validCandidate)) {
+    input.value = currentSearch ? String(currentSearch.original) : '';
+    runSearch();
+    return;
+  }
   inputError.textContent = '';
   input.removeAttribute('aria-invalid');
   if (!raw && !badInput) {
@@ -295,6 +353,7 @@ function runSearch() {
 
 input.addEventListener('input', () => {
   revision += 1;
+  challengeWorkspace?.inputChanged();
   // Stop pending updates immediately, including during the debounce interval.
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(runSearch, 250);
