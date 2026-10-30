@@ -1,6 +1,6 @@
 import { permuteDexNumber } from './permute.js';
 import { createApiClient, displayName } from './api.js';
-import { createChallengeWorkspace } from './challenge-ui.js';
+import { createTeamWorkspace } from './team-ui.js';
 
 const TYPE_COLORS = {
   normal: '#A8A77A', fire: '#EE8130', water: '#6390F0', electric: '#F7D02C',
@@ -29,27 +29,24 @@ const cardContents = new WeakMap();
 let debounceTimer;
 let revision = 0;
 let currentSearch = null;
-let challengeWorkspace = null;
-challengeWorkspace = createChallengeWorkspace({
-  root: document.querySelector('#challenge-workspace'),
-  onResume(number) {
-    input.value = String(number);
-    revision += 1;
-    runSearch();
-    input.focus();
-  },
-  onSelectionChange: updateShortlist,
+let teamWorkspace = null;
+teamWorkspace = createTeamWorkspace({
+  root: document.querySelector('#team-workspace'),
+  onSelectionChange: updateMembership,
+  inspectMember: loadMemberDetails,
 });
 
-function updateShortlist() {
-  if (!challengeWorkspace || !currentSearch) return;
+function updateMembership() {
+  if (!teamWorkspace || !currentSearch) return;
   for (const [number, card] of currentSearch.cards) {
-    const selected = challengeWorkspace.isSelected(currentSearch.original, number);
-    card.dataset.shortlisted = String(selected);
-    const control = card.querySelector('.shortlist-button');
+    const position = teamWorkspace.position(number);
+    card.dataset.member = String(position > 0);
+    const control = card.querySelector('.team-member-button');
     if (control) {
-      control.setAttribute('aria-pressed', String(selected));
-      control.textContent = selected ? '✓ Shortlisted' : '+ Shortlist';
+      control.setAttribute('aria-pressed', String(position > 0));
+      control.setAttribute('aria-label', `${position ? 'Remove' : 'Add'} ${numberLabel(number)} ${position ? 'from' : 'to'} team`);
+      control.textContent = position ? 'Remove from team' : '+ Add to team';
+      card.querySelector('.member-badge').textContent = position ? `Member ${position}` : '';
     }
   }
 }
@@ -69,16 +66,14 @@ function cardTop(number, original) {
   const top = element('div', 'card-top');
   top.append(element('span', 'dex-number', numberLabel(number)));
   if (number === original) top.append(element('span', 'original-badge', 'STARTING NUMBER'));
-  if (challengeWorkspace) {
-    const selected = challengeWorkspace.isSelected(original, number);
-    const control = element('button', 'shortlist-button', selected ? '✓ Shortlisted' : '+ Shortlist');
+  if (teamWorkspace) {
+    const control = element('button', 'team-member-button', '+ Add to team');
     control.type = 'button';
-    control.setAttribute('aria-label', `Shortlist ${numberLabel(number)}`);
-    control.setAttribute('aria-pressed', String(selected));
+    control.dataset.number = String(number);
     control.addEventListener('click', () => {
-      if (currentSearch?.revision === revision && currentSearch.original === original) challengeWorkspace.shortlist(original, number);
+      if (currentSearch?.revision === revision && currentSearch.original === original) teamWorkspace.toggle(number);
     });
-    top.append(control);
+    top.append(element('span', 'member-badge'), control);
   }
   return top;
 }
@@ -87,7 +82,7 @@ function renderCardContent(card, number, original, ...children) {
   let content = cardContents.get(card);
   if (!content) {
     content = element('div', 'card-content');
-    // Keep the header and its keyboard-focused shortlist control mounted across
+    // Keep the header and its keyboard-focused membership control mounted across
     // loading, success, failure, and retry. Only the details below it change.
     card.append(cardTop(number, original), content);
     cardContents.set(card, content);
@@ -243,12 +238,31 @@ function renderCard(card, data, search, retry) {
   card.removeAttribute('aria-busy');
   card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
   card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || FALLBACK_TYPE_COLOR);
-  const heading = element('h3', '', data.name);
-  renderCardContent(
-    card, data.number, search.original, heading, renderTypes(data.types),
-    renderAbilities(data), renderStats(data), renderEvolution(data, retry), ...renderCopyControls(data),
-  );
-  updateShortlist();
+  renderCardContent(card, data.number, search.original, ...pokemonDetails(data, retry));
+  teamWorkspace?.rememberPokemon(data);
+  updateMembership();
+}
+
+function pokemonDetails(data, retry) {
+  return [element('h3', '', data.name), renderTypes(data.types), renderAbilities(data),
+    renderStats(data), renderEvolution(data, retry), ...renderCopyControls(data)];
+}
+
+async function loadMemberDetails(container, number, signal) {
+  container.textContent = 'Loading Pokémon…';
+  const retry = () => loadMemberDetails(container, number, signal);
+  try {
+    const data = await client.getPokemon(number, { signal });
+    if (signal.aborted || !container.isConnected) return;
+    container.replaceChildren(...pokemonDetails(data, retry));
+    teamWorkspace?.rememberPokemon(data);
+  } catch (error) {
+    if (signal.aborted || !container.isConnected || error.name === 'AbortError') return;
+    const control = element('button', 'retry-button', 'Retry Pokémon');
+    control.type = 'button';
+    control.addEventListener('click', retry);
+    container.replaceChildren(element('p', 'card-error', error.message || 'Could not load this Pokémon.'), control);
+  }
 }
 
 function announce(search) {
@@ -266,7 +280,7 @@ async function loadCard(card, number, search) {
   search.states.set(number, 'loading');
   announce(search);
   renderLoading(card, number, search.original);
-  updateShortlist();
+  updateMembership();
   const retry = () => loadCard(card, number, search);
   try {
     const data = await client.getPokemon(number, { signal: search.controller.signal });
@@ -284,7 +298,7 @@ async function loadCard(card, number, search) {
     renderCardContent(card, number, search.original, element('h3', '', 'Connection missed.'), element('p', 'card-error', error.message || 'Could not load this Pokémon.'), button);
     search.states.set(number, 'error');
   }
-  updateShortlist();
+  updateMembership();
   announce(search);
 }
 
@@ -292,13 +306,6 @@ function runSearch() {
   clearTimeout(debounceTimer);
   const raw = input.value.trim();
   const badInput = input.validity.badInput;
-  const candidate = /^\d+$/.test(raw) && !badInput ? Number(raw) : null;
-  const validCandidate = Number.isInteger(candidate) && candidate >= 1 && candidate <= 1025 ? candidate : null;
-  if (challengeWorkspace && !challengeWorkspace.prepareSearch(validCandidate)) {
-    input.value = currentSearch ? String(currentSearch.original) : '';
-    runSearch();
-    return;
-  }
   inputError.textContent = '';
   input.removeAttribute('aria-invalid');
   if (!raw && !badInput) {
@@ -353,7 +360,6 @@ function runSearch() {
 
 input.addEventListener('input', () => {
   revision += 1;
-  challengeWorkspace?.inputChanged();
   // Stop pending updates immediately, including during the debounce interval.
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(runSearch, 250);

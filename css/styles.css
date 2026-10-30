@@ -109,33 +109,33 @@ form label { display: block; margin-bottom: 10px; color: #c3cbd6; }
 .skip-link { position: absolute; left: 20px; top: -100px; background: var(--accent); color: var(--bg); padding: 12px; border-radius: 5px; z-index: 5; }
 .skip-link:focus { top: 12px; }
 .noscript { margin: 20px; color: var(--danger); }
-.challenge-workspace { margin: 0 auto 30px; padding: 24px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); }
-.challenge-heading, .latest-challenge { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.challenge-heading h2 { margin: 0; font-size: 20px; }
-.challenge-workspace button, .shortlist-button { min-height: 44px; border: 1px solid #536174; border-radius: 7px; background: var(--surface-raised); color: var(--text); padding: 9px 13px; font-size: 14px; font-weight: 650; }
-.challenge-workspace button:hover, .shortlist-button:hover { border-color: var(--accent); }
-.challenge-workspace button:disabled { cursor: not-allowed; }
-.shortlist-button { font-size: 12px; padding: 6px 10px; }
-.shortlist-button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-.pokemon-card[data-shortlisted="true"] { box-shadow: 0 0 0 2px #b9f56950; }
-.challenge-help { font-size: 13px; color: var(--muted); }
-.latest-challenge { margin-block: 16px; font-size: 14px; }
-.latest-challenge p { margin: 0; overflow-wrap: anywhere; }
-.challenge-naming { margin: 18px 0; max-width: none; }
-.challenge-workspace label { display: block; margin: 12px 0 8px; font-size: 14px; font-weight: 650; letter-spacing: normal; }
-.challenge-workspace input[type="text"], .challenge-workspace textarea { width: 100%; max-width: 100%; min-width: 0; border: 1px solid #536174; border-radius: 7px; background: var(--bg); color: var(--text); padding: 11px; font-size: 16px; }
-.challenge-workspace textarea { display: block; resize: vertical; }
-.challenge-workspace h3 { overflow-wrap: anywhere; }
-.challenge-workspace .error-text { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
-.challenge-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.challenge-library { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
-.challenge-library summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
-.challenge-library ul { list-style: none; padding: 6px; margin: 0; max-height: 420px; overflow-y: auto; }
-.challenge-library li { border-top: 1px solid var(--border); padding-block: 14px; }
-.challenge-library li strong, .challenge-library li > span { display: block; overflow-wrap: anywhere; }
-.challenge-library li > span { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.team-workspace { margin: 0 auto 30px; padding: 24px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); }
+.team-heading, .latest-team { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.team-heading h2 { margin: 0; font-size: 20px; }
+.team-workspace button, .team-member-button { min-height: 44px; border: 1px solid #536174; border-radius: 7px; background: var(--surface-raised); color: var(--text); padding: 9px 13px; font-size: 14px; font-weight: 650; }
+.team-workspace button:hover, .team-member-button:hover { border-color: var(--accent); }
+.team-workspace button:disabled { cursor: not-allowed; }
+.team-member-button { font-size: 12px; padding: 6px 10px; }
+.team-member-button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.pokemon-card[data-member="true"] { box-shadow: 0 0 0 2px #b9f56950; }
+.team-help { font-size: 13px; color: var(--muted); }
+.latest-team { margin-block: 16px; font-size: 14px; }
+.latest-team p { margin: 0; overflow-wrap: anywhere; }
+.team-naming { margin: 18px 0; max-width: none; }
+.team-workspace label { display: block; margin: 12px 0 8px; font-size: 14px; font-weight: 650; letter-spacing: normal; }
+.team-workspace input[type="text"], .team-workspace textarea { width: 100%; max-width: 100%; min-width: 0; border: 1px solid #536174; border-radius: 7px; background: var(--bg); color: var(--text); padding: 11px; font-size: 16px; }
+.team-workspace textarea { display: block; resize: vertical; }
+.team-workspace h3 { overflow-wrap: anywhere; }
+.team-workspace .error-text { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+.team-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.team-library { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.team-library summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+.team-library ul { list-style: none; padding: 6px; margin: 0; max-height: 420px; overflow-y: auto; }
+.team-library li { border-top: 1px solid var(--border); padding-block: 14px; }
+.team-library li strong, .team-library li > span { display: block; overflow-wrap: anywhere; }
+.team-library li > span { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .backup-actions { border-top: 1px solid var(--border); padding-top: 16px; }
-#challenge-status:empty, #backup-status:empty { display: none; }
+#team-status:empty, #backup-status:empty { display: none; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 @media (min-width: 1600px) {
@@ -154,7 +154,7 @@ form label { display: block; margin-bottom: 10px; color: #c3cbd6; }
   .results-header { align-items: flex-start; flex-direction: column; gap: 7px; }
   .results-header p { text-align: left; }
   .site-footer { flex-direction: column; gap: 9px; }
-  .challenge-workspace { padding: 18px; }
+  .team-workspace { padding: 18px; }
 }
 @media (max-width: 420px) {
   .shell { width: calc(100% - 32px); }
@@ -170,3 +170,12 @@ form label { display: block; margin-bottom: 10px; color: #c3cbd6; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; }
 }
+
+.member-badge { color: var(--accent); font-size: 12px; font-weight: 700; }
+.member-badge:empty, #team-search-context:empty { display: none; }
+.team-roster { list-style: none; padding: 0; margin: 16px 0; max-height: 480px; overflow-y: auto; }
+.team-roster > li { padding: 14px 6px; border-top: 1px solid var(--border); }
+.team-roster strong, .member-name { display: block; overflow-wrap: anywhere; }
+.member-name { color: var(--muted); font-size: 14px; }
+.team-roster button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.member-details { margin-top: 16px; }

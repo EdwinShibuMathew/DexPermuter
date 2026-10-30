@@ -61,12 +61,12 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run browser regression tests
         run: npm run test:browser
-      - name: Upload challenge previews
+      - name: Upload team previews
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: challenge-previews-${{ github.run_id }}
-          path: test-results/**/challenge-preview.png
+          name: team-previews-${{ github.run_id }}
+          path: test-results/**/team-preview.png
           retention-days: 7
           if-no-files-found: error
       - name: Upload browser failure diagnostics
