@@ -80,6 +80,7 @@ test('UI handles debounce, Enter, stale responses, independent retries, validati
       }) };
     }
     if (url.includes('/pokemon-species/')) return { ok: true, json: async () => ({
+      name: `pokemon-${number}`,
       names: [{ language: { name: 'en' }, name: `Pokémon ${number}` }],
       evolution_chain: { url: `https://pokeapi.co/api/v2/evolution-chain/${number}/` },
     }) };
@@ -171,7 +172,129 @@ test('UI handles debounce, Enter, stale responses, independent retries, validati
       assert.equal(input.attributes.has('aria-invalid'), false);
       assert.equal(nodes['empty-state'].hidden, false);
     });
+
+    // Stall actual fetches so these cases exercise the controller and shared API queue together.
+    const stalled = new Set();
+    const starts = [];
+    const waiting = [];
+    let active = 0;
+    let maximum = 0;
+    const apiResponse = (url, number) => {
+      let data;
+      if (url.includes('/pokemon/')) data = {
+        name: `pokemon-${number}`,
+        types: [{ slot: 1, type: { name: 'normal' } }],
+        abilities: [{ slot: 1, ability: { name: 'static' }, is_hidden: false }],
+        stats: STAT_KEYS.map(name => ({ stat: { name }, base_stat: 50 })),
+      };
+      else if (url.includes('/pokemon-species/')) data = {
+        name: `pokemon-${number}`, names: [],
+        evolution_chain: { url: `https://pokeapi.co/api/v2/evolution-chain/${number}/` },
+      };
+      else data = { chain: { species: { name: `pokemon-${number}` }, evolves_to: [] } };
+      return { ok: true, json: async () => data };
+    };
+    globalThis.fetch = (url, { signal }) => {
+      const number = Number(url.match(/\/(\d+)\/$/)[1]);
+      starts.push({ number, signal });
+      active += 1;
+      maximum = Math.max(maximum, active);
+      if (!stalled.has(number)) { active -= 1; return Promise.resolve(apiResponse(url, number)); }
+      return new Promise((resolve, reject) => {
+        let finished = false;
+        const finish = canceled => {
+          if (finished) return;
+          finished = true;
+          active -= 1;
+          signal.removeEventListener('abort', cancel);
+          if (canceled) reject(signal.reason);
+          else resolve(apiResponse(url, number));
+        };
+        const cancel = () => finish(true);
+        signal.addEventListener('abort', cancel, { once: true });
+        waiting.push(() => finish(false));
+      });
+    };
+    const pauseSearch = async value => {
+      starts.length = 0;
+      // Stalling every possible number keeps the test independent of permutation ordering.
+      for (let number = 1; number <= 1025; number += 1) stalled.add(number);
+      await submit(value);
+      assert.equal(starts.length, 4);
+    };
+    const releaseSearch = async () => {
+      stalled.clear();
+      for (const release of waiting.splice(0)) release();
+      await settle();
+    };
+
+    await t.test('new searches load promptly without starting queued obsolete requests', async () => {
+      await pauseSearch('12');
+      const old = [...starts];
+      stalled.clear();
+      await submit('34');
+      assert.ok(old.every(request => request.signal.aborted));
+      assert.equal(starts.slice(4).some(request => [12, 21, 102, 120, 201, 210, 1002, 1020].includes(request.number)), false);
+      assert.equal(grid.children.length, 6);
+      assert.match(nodes['results-status'].textContent, /6 loaded/);
+      assert.equal(maximum, 4);
+      assert.equal(active, 0);
+    });
+
+    await t.test('clearing or invalidating input aborts stalled work after debounce', async () => {
+      for (const [search, value] of [['56', ''], ['78', '0']]) {
+        await pauseSearch(search);
+        const old = [...starts];
+        input.value = value;
+        await input.trigger('input');
+        assert.ok(old.every(request => !request.signal.aborted));
+        await flush(250);
+        assert.ok(old.every(request => request.signal.aborted));
+        assert.equal(starts.length, 4);
+        assert.equal(active, 0);
+        assert.equal(grid.children.length, 0);
+        assert.equal(nodes['empty-state'].hidden, value !== '');
+        assert.doesNotMatch(nodes['results-status'].textContent, /failed/);
+      }
+    });
+
+    await t.test('submitting an unchanged number retains active requests', async () => {
+      await pauseSearch('89');
+      const old = [...starts];
+      await submit('089');
+      assert.equal(starts.length, 4);
+      assert.ok(old.every(request => !request.signal.aborted));
+      await releaseSearch();
+      assert.match(nodes['results-status'].textContent, /6 loaded/);
+    });
+
+    await t.test('overlapping searches retain shared active requests', async () => {
+      await pauseSearch('12');
+      const old = [...starts];
+      await submit('21');
+      assert.equal(starts.length, 4);
+      assert.ok(old.every(request => !request.signal.aborted));
+      await releaseSearch();
+      assert.match(nodes['results-status'].textContent, /8 loaded/);
+      assert.equal(grid.children.length, 8);
+      assert.equal(active, 0);
+      assert.equal(maximum, 4);
+    });
+
+    await t.test('responses withheld during debounce recover when input returns to the same number', async () => {
+      await pauseSearch('67');
+      input.value = '067';
+      await input.trigger('input');
+      await releaseSearch();
+      assert.match(grid.textContent, /Loading Pokémon/);
+      const callsBeforeCommit = starts.length;
+      await flush(250);
+      assert.match(nodes['results-status'].textContent, /6 loaded/);
+      assert.equal(starts.length, callsBeforeCommit);
+      assert.doesNotMatch(grid.textContent, /Connection missed/);
+    });
   } finally {
+    await submit('');
     for (const [key, descriptor] of Object.entries(original)) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];

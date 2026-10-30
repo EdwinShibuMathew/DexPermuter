@@ -119,6 +119,64 @@ function browserStorage() {
   try { return globalThis.localStorage; } catch { return null; }
 }
 
+function resourceUrl(resource) {
+  const parsed = new URL(resource, API_ROOT);
+  if (parsed.origin !== 'https://pokeapi.co' || !parsed.pathname.startsWith('/api/v2/')) throw new ApiError('An unexpected API resource was requested.');
+  parsed.hash = '';
+  return parsed.href;
+}
+
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isName = value => typeof value === 'string' && value.trim().length > 0;
+const isNamedResource = value => isObject(value) && isName(value.name);
+
+function validEvolutionDetail(detail) {
+  if (!isObject(detail)) return false;
+  const namedConditions = ['trigger', 'item', 'held_item', 'trade_species', 'known_move', 'known_move_type', 'location', 'region', 'required_pokemon_form', 'evolved_pokemon_form', 'party_species', 'party_type', 'used_move'];
+  if (!namedConditions.every(key => detail[key] == null || isNamedResource(detail[key]))) return false;
+  if (detail.allowed_natures != null && (!Array.isArray(detail.allowed_natures) || !detail.allowed_natures.every(isNamedResource))) return false;
+  const expression = detail.condition_expression;
+  return expression == null || (isObject(expression) && (expression.variables == null ||
+    (Array.isArray(expression.variables) && expression.variables.every(isNamedResource))));
+}
+
+/** Check only the resource fields this application consumes, not the full API schema. */
+function validateResource(url, data) {
+  if (!isObject(data)) throw new ApiError('PokéAPI returned invalid data. Please retry.');
+  const family = new URL(url).pathname.match(/^\/api\/v2\/(pokemon|pokemon-species|evolution-chain)\/[^/]+\/?$/)?.[1];
+  if (family === 'pokemon') {
+    if (!isName(data.name) || !Array.isArray(data.stats) || !Array.isArray(data.types) || !Array.isArray(data.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
+    for (const key of STAT_KEYS) {
+      const value = data.stats.find(stat => stat?.stat?.name === key)?.base_stat;
+      if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
+    }
+    if (!data.types.length || !data.types.every(entry => isNamedResource(entry?.type) && Number.isInteger(entry.slot)) ||
+        !data.abilities.every(entry => isNamedResource(entry?.ability) && Number.isInteger(entry.slot) && typeof entry.is_hidden === 'boolean')) {
+      throw new ApiError('Pokémon types or abilities are incomplete. Please retry.');
+    }
+  } else if (family === 'pokemon-species') {
+    if (!isName(data.name) || !Array.isArray(data.names) || !data.names.every(entry => isName(entry?.name) && isNamedResource(entry.language)) ||
+        !Object.hasOwn(data, 'evolution_chain') || (data.evolution_chain !== null && !isName(data.evolution_chain?.url))) {
+      throw new ApiError('Species data is incomplete. Please retry.');
+    }
+    if (data.evolution_chain && !/^\/api\/v2\/evolution-chain\/[^/]+\/?$/.test(new URL(resourceUrl(data.evolution_chain.url)).pathname)) {
+      throw new ApiError('Species evolution data is incomplete. Please retry.');
+    }
+  } else if (family === 'evolution-chain') {
+    const links = [data.chain];
+    while (links.length) {
+      const link = links.pop();
+      if (!isNamedResource(link?.species) || !Array.isArray(link.evolves_to) ||
+          (link.evolution_details != null && (!Array.isArray(link.evolution_details) || !link.evolution_details.every(validEvolutionDetail)))) {
+        throw new ApiError('Evolution data is incomplete. Please retry.');
+      }
+      links.push(...link.evolves_to);
+    }
+    // The formatter also checks optional conditions that can contain nested lists.
+    try { summarizeEvolution(data); } catch { throw new ApiError('Evolution data is incomplete. Please retry.'); }
+  }
+}
+
 /** Dependencies can be supplied for offline tests; browser defaults need no setup. */
 export function createApiClient({
   fetchImpl = (...args) => globalThis.fetch(...args),
@@ -137,95 +195,163 @@ export function createApiClient({
 
   function pump() {
     while (active < concurrency && queue.length) {
-      const { task, resolve, reject } = queue.shift();
+      const entry = queue.shift();
+      entry.state = 'active';
       active += 1;
-      Promise.resolve().then(task).then(resolve, reject).finally(() => {
+      Promise.resolve().then(() => request(entry.url, entry.controller)).then(
+        data => finish(entry, null, data),
+        error => finish(entry, error),
+      ).finally(() => {
         active -= 1;
         pump();
       });
     }
   }
 
-  function schedule(task) {
+  function finish(entry, error, data) {
+    entry.state = 'settled';
+    if (pending.get(entry.url) === entry) pending.delete(entry.url);
+    for (const consumer of entry.consumers) {
+      consumer.cleanup();
+      if (error) consumer.reject(error);
+      else consumer.resolve(data);
+    }
+    entry.consumers.clear();
+  }
+
+  function subscribe(entry, signal) {
     return new Promise((resolve, reject) => {
-      queue.push({ task, resolve, reject });
-      pump();
+      const consumer = { resolve, reject, cleanup: () => signal?.removeEventListener('abort', cancel) };
+      function cancel() {
+        consumer.cleanup();
+        entry.consumers.delete(consumer);
+        reject(new DOMException('The request was canceled.', 'AbortError'));
+        if (!entry.consumers.size) {
+          if (pending.get(entry.url) === entry) pending.delete(entry.url);
+          if (entry.state === 'queued') queue.splice(queue.indexOf(entry), 1);
+          entry.controller.abort();
+        }
+      }
+      entry.consumers.add(consumer);
+      signal?.addEventListener('abort', cancel, { once: true });
     });
+  }
+
+  function evictCache(url) {
+    memory.delete(url);
+    try { storage?.removeItem(CACHE_PREFIX + url); } catch { /* Storage can be blocked. */ }
+  }
+
+  function validEntry(url, entry) {
+    if (!entry || !Number.isFinite(entry.savedAt)) return false;
+    const age = now() - entry.savedAt;
+    if (age < 0 || age >= cacheTtlMs) return false;
+    try { validateResource(url, entry.data); return true; } catch { return false; }
   }
 
   function readCache(url) {
     let entry = memory.get(url);
     if (!entry) {
-      try { entry = JSON.parse(storage?.getItem(CACHE_PREFIX + url) || 'null'); } catch { return null; }
+      try { entry = JSON.parse(storage?.getItem(CACHE_PREFIX + url) || 'null'); } catch { evictCache(url); return null; }
     }
-    if (!entry || !Number.isFinite(entry.savedAt) || now() - entry.savedAt < 0 || now() - entry.savedAt >= cacheTtlMs || !entry.data || typeof entry.data !== 'object') return null;
+    if (!validEntry(url, entry)) {
+      evictCache(url);
+      return null;
+    }
     memory.set(url, entry);
     return entry.data;
+  }
+
+  function pruneStorage() {
+    // Snapshot keys before deletion; Storage indexes shift when entries are removed.
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    for (const key of keys) {
+      if (!key?.startsWith(CACHE_PREFIX)) continue;
+      const url = key.slice(CACHE_PREFIX.length);
+      let valid = false;
+      try { valid = resourceUrl(url) === url && validEntry(url, JSON.parse(storage.getItem(key))); } catch { /* Invalid owned entry. */ }
+      if (!valid) {
+        // Remove only the persisted copy; memory may hold a newer response.
+        storage.removeItem(key);
+      }
+    }
   }
 
   function writeCache(url, data) {
     const entry = { savedAt: now(), data };
     memory.set(url, entry);
-    try { storage?.setItem(CACHE_PREFIX + url, JSON.stringify(entry)); } catch { /* In-memory caching remains available when storage is full or blocked. */ }
-  }
-
-  async function request(url) {
-    const controller = new AbortController();
-    let timer;
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        reject(new ApiError('PokéAPI took too long to respond. Please retry.'));
-      }, timeoutMs);
-    });
-    try {
-      const data = await Promise.race([
-        (async () => {
-          const response = await fetchImpl(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
-          if (!response.ok) {
-            throw new ApiError(response.status === 404 ? 'This Pokémon resource was not found (404).' : `PokéAPI returned an error (${response.status}). Please retry.`, response.status);
-          }
-          const json = await response.json();
-          if (!json || typeof json !== 'object' || Array.isArray(json)) throw new ApiError('PokéAPI returned invalid data. Please retry.');
-          return json;
-        })(),
-        timeout,
-      ]);
-      writeCache(url, data);
-      return data;
-    } catch (error) {
-      if (error instanceof ApiError) throw error;
-      if (controller.signal.aborted) throw new ApiError('PokéAPI took too long to respond. Please retry.');
-      throw new ApiError('Could not reach PokéAPI. Check your connection and retry.');
-    } finally {
-      clearTimeout(timer);
+    if (!storage) return;
+    try { storage.setItem(CACHE_PREFIX + url, JSON.stringify(entry)); } catch {
+      try {
+        pruneStorage();
+        storage.setItem(CACHE_PREFIX + url, JSON.stringify(entry));
+      } catch { /* In-memory caching remains available when storage is full or blocked. */ }
     }
   }
 
-  async function fetchResource(resource) {
-    const parsed = new URL(resource, API_ROOT);
-    if (parsed.origin !== 'https://pokeapi.co' || !parsed.pathname.startsWith('/api/v2/')) throw new ApiError('An unexpected API resource was requested.');
-    parsed.hash = '';
-    const url = parsed.href;
-    const cached = readCache(url);
-    if (cached) return cached;
-    if (pending.has(url)) return pending.get(url);
-    const promise = schedule(() => request(url));
-    pending.set(url, promise);
-    try { return await promise; } finally { pending.delete(url); }
+  async function request(url, controller) {
+    const { signal } = controller;
+    signal.throwIfAborted();
+    let onAbort;
+    const canceled = new Promise((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const timer = setTimeout(() => controller.abort(new ApiError('PokéAPI took too long to respond. Please retry.')), timeoutMs);
+    try {
+      const data = await Promise.race([
+        (async () => {
+          const response = await fetchImpl(url, { signal, headers: { Accept: 'application/json' } });
+          if (!response.ok) {
+            throw new ApiError(response.status === 404 ? 'This Pokémon resource was not found (404).' : `PokéAPI returned an error (${response.status}). Please retry.`, response.status);
+          }
+          return response.json();
+        })(),
+        canceled,
+      ]);
+      signal.throwIfAborted();
+      validateResource(url, data);
+      writeCache(url, data);
+      return data;
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      if (error instanceof ApiError) throw error;
+      throw new ApiError('Could not reach PokéAPI. Check your connection and retry.');
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    }
   }
 
-  async function getPokemon(number) {
+  async function fetchResource(resource, { signal } = {}) {
+    signal?.throwIfAborted();
+    const url = resourceUrl(resource);
+    const cached = readCache(url);
+    if (cached) return cached;
+    let entry = pending.get(url);
+    if (!entry) {
+      entry = { url, controller: new AbortController(), consumers: new Set(), state: 'queued' };
+      pending.set(url, entry);
+      queue.push(entry);
+    }
+    const promise = subscribe(entry, signal);
+    pump();
+    return promise;
+  }
+
+  async function getPokemon(number, { signal } = {}) {
     validateDexNumber(number);
+    signal?.throwIfAborted();
     const [pokemonResult, speciesResult] = await Promise.allSettled([
-      fetchResource(`pokemon/${number}/`),
-      fetchResource(`pokemon-species/${number}/`),
+      fetchResource(`pokemon/${number}/`, { signal }),
+      fetchResource(`pokemon-species/${number}/`, { signal }),
     ]);
+    signal?.throwIfAborted();
     if (pokemonResult.status === 'rejected') throw pokemonResult.reason;
     const pokemon = pokemonResult.value;
     if (!pokemon.name || !Array.isArray(pokemon.stats) || !Array.isArray(pokemon.types) || !Array.isArray(pokemon.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
     const stats = STAT_KEYS.map(key => {
-      const value = pokemon.stats.find(stat => stat.stat?.name === key)?.base_stat;
+      const value = pokemon.stats.find(stat => stat?.stat?.name === key)?.base_stat;
       if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
       return { key, value };
     });
@@ -246,10 +372,12 @@ export function createApiClient({
     try {
       if (speciesResult.status === 'rejected') throw speciesResult.reason;
       if (!species?.evolution_chain?.url) throw new ApiError('No evolution chain was provided by PokéAPI.');
-      data.evolution = summarizeEvolution(await fetchResource(species.evolution_chain.url));
+      data.evolution = summarizeEvolution(await fetchResource(species.evolution_chain.url, { signal }));
     } catch (error) {
+      if (signal?.aborted || error.name === 'AbortError') throw error;
       data.evolutionError = error.message || 'Evolution information could not be loaded.';
     }
+    signal?.throwIfAborted();
     return data;
   }
 
