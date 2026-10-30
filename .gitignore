@@ -1,6 +1,8 @@
 node_modules/
 _site/
 coverage/
+playwright-report/
+test-results/
 .cache/
 .DS_Store
 Thumbs.db
