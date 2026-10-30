@@ -32,6 +32,8 @@ If storage is blocked or full, the page keeps your current edits in memory and m
 
 DexPermuter will remain a **JAMstack application**: static files, browser-side behavior, and external APIs. It requires no application server, accounts, API keys, or browser dependencies. GitHub Pages serves the site without a build step. User records use `dexpermuter:challenges:v1:` storage keys, separate from the seven-day PokéAPI cache.
 
+For the creator pilot, have five creators save a named search, shortlist candidates, and write a note. In a second session, ask each to resume their challenge without re-entering it, then download and restore a backup. Record whether the number, shortlist, and note are recovered, any assistance required, and whether this replaces their current preparation workflow. This pilot requires real participants; automated tests do not establish retention gains.
+
 ## Browser regression tests
 
 The browser suite runs the real page in headless Chromium at desktop and mobile sizes, using local PokéAPI fixtures. Install the development tools and Chromium once:

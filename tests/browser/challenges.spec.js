@@ -177,6 +177,9 @@ test('another tab pauses autosave and allows a copy after updates or deletion', 
   await other.getByRole('button', { name: 'Continue challenge', exact: true }).click();
   await page.getByLabel('Episode note', { exact: true }).fill('Local edit');
   await other.getByLabel('Episode note', { exact: true }).fill('Other tab edit');
+  // The clock belongs to the shared context. An immediate shortlist save flushes
+  // the other note without advancing the first tab's pending autosave timer.
+  await other.getByRole('button', { name: 'Shortlist #0100', exact: true }).click();
   await expect(other.locator('#challenge-status')).toHaveText('Saved on this device.');
   await expect(page.locator('#challenge-conflict')).toBeVisible();
   await expect(page.getByLabel('Episode note', { exact: true })).toHaveValue('Local edit');

@@ -279,7 +279,12 @@ export function createChallengeWorkspace({ root, onResume, onSelectionChange, st
   renderEditor();
 
   return {
-    inputChanged() { ready = false; saveButton.disabled = true; },
+    inputChanged() {
+      ready = false;
+      saveButton.disabled = true;
+      naming.hidden = true;
+      pendingSelection = null;
+    },
     prepareSearch(number) {
       if (number !== startingNumber) {
         if (!canLeave()) return false;
