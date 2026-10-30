@@ -8,6 +8,10 @@ const TYPE_COLORS = {
   rock: '#B6A136', ghost: '#735797', dragon: '#6F35FC', dark: '#705746',
   steel: '#B7B7CE', fairy: '#D685AD',
 };
+const FALLBACK_TYPE_COLOR = '#a8b3c3';
+const TYPE_TEXT_COLORS = new Map(
+  [...Object.values(TYPE_COLORS), FALLBACK_TYPE_COLOR].map(color => [color, readableTextColor(color)]),
+);
 const STAT_META = {
   hp: ['HP', '#f17478'], attack: ['Atk', '#f4ad65'], defense: ['Def', '#f1d563'],
   'special-attack': ['SpA', '#75b5f2'], 'special-defense': ['SpD', '#9edb7b'], speed: ['Spe', '#d69ce9'],
@@ -105,9 +109,9 @@ function renderTypes(values) {
   const types = element('div', 'types');
   for (const type of values) {
     const pill = element('span', 'type-badge', displayName(type));
-    const color = TYPE_COLORS[type] || '#a8b3c3';
+    const color = TYPE_COLORS[type] || FALLBACK_TYPE_COLOR;
     pill.style.setProperty('--type-color', color);
-    pill.style.color = readableTextColor(color);
+    pill.style.color = TYPE_TEXT_COLORS.get(color) ?? readableTextColor(color);
     types.append(pill);
   }
   return types;
@@ -190,7 +194,7 @@ function renderCopyControls(data) {
 function renderCard(card, data, search, retry) {
   card.removeAttribute('aria-busy');
   card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
-  card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || '#a8b3c3');
+  card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || FALLBACK_TYPE_COLOR);
   const heading = element('h3', '', data.name);
   card.replaceChildren(
     cardTop(data.number, search.original), heading, renderTypes(data.types),

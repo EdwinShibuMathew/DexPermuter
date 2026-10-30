@@ -4,6 +4,28 @@ const API_ROOT = 'https://pokeapi.co/api/v2/';
 const CACHE_PREFIX = 'dexpermuter:v1:';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+const EVOLUTION_TRIGGERS = {
+  shed: 'with a spare party slot and a Poké Ball when Nincada evolves',
+  spin: 'by spinning',
+  'tower-of-darkness': 'by completing the Tower of Darkness',
+  'tower-of-waters': 'by completing the Tower of Waters',
+  'three-critical-hits': 'after landing three critical hits in one battle',
+  'take-damage': 'after taking the required damage',
+  'agile-style-move': 'by using the required move in Agile Style',
+  'strong-style-move': 'by using the required move in Strong Style',
+  'recoil-damage': 'after taking the required recoil damage',
+};
+const KNOWN_EVOLUTION_FIELDS = new Set([
+  'trigger', 'item', 'held_item', 'trade_species', 'gender', 'min_level', 'min_happiness',
+  'min_beauty', 'min_affection', 'time_of_day', 'known_move', 'known_move_type', 'location',
+  'region', 'required_pokemon_form', 'evolved_pokemon_form', 'near_special_rock',
+  'needs_multiplayer', 'needs_overworld_rain', 'turn_upside_down', 'party_species',
+  'party_type', 'relative_physical_stats', 'used_move', 'min_move_count', 'min_steps',
+  'min_damage_taken', 'allowed_natures', 'condition_expression', 'version_group', 'is_default',
+]);
+const NAMED_EVOLUTION_CONDITIONS = ['trigger', 'item', 'held_item', 'trade_species', 'known_move', 'known_move_type', 'location', 'region', 'required_pokemon_form', 'evolved_pokemon_form', 'party_species', 'party_type', 'used_move'];
+const PHYSICAL_STAT_RELATIONS = { '-1': 'lower than', 0: 'equal to', 1: 'higher than' };
+
 export const STAT_KEYS = ['hp', 'attack', 'defense', 'special-attack', 'special-defense', 'speed'];
 
 export class ApiError extends Error {
@@ -29,18 +51,7 @@ export function describeEvolutionMethod(detail = {}) {
   } else if (trigger === 'use-item') {
     conditions.push(detail.item ? `using ${displayName(detail.item.name)}` : 'using an evolution item');
   } else {
-    const triggers = {
-      shed: 'with a spare party slot and a Poké Ball when Nincada evolves',
-      spin: 'by spinning',
-      'tower-of-darkness': 'by completing the Tower of Darkness',
-      'tower-of-waters': 'by completing the Tower of Waters',
-      'three-critical-hits': 'after landing three critical hits in one battle',
-      'take-damage': 'after taking the required damage',
-      'agile-style-move': 'by using the required move in Agile Style',
-      'strong-style-move': 'by using the required move in Strong Style',
-      'recoil-damage': 'after taking the required recoil damage',
-    };
-    conditions.push(triggers[trigger] || 'by a special evolution method (check your game)');
+    conditions.push(EVOLUTION_TRIGGERS[trigger] || 'by a special evolution method (check your game)');
     if (detail.min_level != null) conditions.push(`at level ${detail.min_level} or higher`);
   }
   if (detail.item && trigger !== 'use-item') conditions.push(`using ${displayName(detail.item.name)}`);
@@ -64,7 +75,7 @@ export function describeEvolutionMethod(detail = {}) {
   if (detail.party_species) conditions.push(`with ${displayName(detail.party_species.name)} in the party`);
   if (detail.party_type) conditions.push(`with a ${displayName(detail.party_type.name)} Pokémon in the party`);
   if (detail.relative_physical_stats != null) {
-    const relation = { '-1': 'lower than', 0: 'equal to', 1: 'higher than' }[detail.relative_physical_stats];
+    const relation = PHYSICAL_STAT_RELATIONS[detail.relative_physical_stats];
     conditions.push(relation ? `with Attack ${relation} Defense` : 'with the required Attack/Defense relationship');
   }
   if (detail.used_move) {
@@ -82,16 +93,8 @@ export function describeEvolutionMethod(detail = {}) {
     const chance = expression.percentage_chance;
     conditions.push(`with an additional ${variables || 'game-specific'} condition${chance != null ? ` (${chance}% of cases)` : ''}`);
   }
-  const knownFields = new Set([
-    'trigger', 'item', 'held_item', 'trade_species', 'gender', 'min_level', 'min_happiness',
-    'min_beauty', 'min_affection', 'time_of_day', 'known_move', 'known_move_type', 'location',
-    'region', 'required_pokemon_form', 'evolved_pokemon_form', 'near_special_rock',
-    'needs_multiplayer', 'needs_overworld_rain', 'turn_upside_down', 'party_species',
-    'party_type', 'relative_physical_stats', 'used_move', 'min_move_count', 'min_steps',
-    'min_damage_taken', 'allowed_natures', 'condition_expression', 'version_group', 'is_default',
-  ]);
   const hasUnknownCondition = Object.entries(detail).some(([key, value]) =>
-    !knownFields.has(key) && value != null && value !== false && value !== '' && (!Array.isArray(value) || value.length > 0));
+    !KNOWN_EVOLUTION_FIELDS.has(key) && value != null && value !== false && value !== '' && (!Array.isArray(value) || value.length > 0));
   if (hasUnknownCondition) conditions.push('with additional requirements (check your game)');
   return conditions.join(', ');
 }
@@ -132,8 +135,7 @@ const isNamedResource = value => isObject(value) && isName(value.name);
 
 function validEvolutionDetail(detail) {
   if (!isObject(detail)) return false;
-  const namedConditions = ['trigger', 'item', 'held_item', 'trade_species', 'known_move', 'known_move_type', 'location', 'region', 'required_pokemon_form', 'evolved_pokemon_form', 'party_species', 'party_type', 'used_move'];
-  if (!namedConditions.every(key => detail[key] == null || isNamedResource(detail[key]))) return false;
+  if (!NAMED_EVOLUTION_CONDITIONS.every(key => detail[key] == null || isNamedResource(detail[key]))) return false;
   if (detail.allowed_natures != null && (!Array.isArray(detail.allowed_natures) || !detail.allowed_natures.every(isNamedResource))) return false;
   const expression = detail.condition_expression;
   return expression == null || (isObject(expression) && (expression.variables == null ||
