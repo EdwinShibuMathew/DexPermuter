@@ -10,6 +10,8 @@ const assets = new Map([
   ['index.html', ['index.html', 'text/html; charset=utf-8']],
   ['css/styles.css', ['css/styles.css', 'text/css; charset=utf-8']],
   ['js/app.js', ['js/app.js', 'text/javascript; charset=utf-8']],
+  ['js/challenges.js', ['js/challenges.js', 'text/javascript; charset=utf-8']],
+  ['js/challenge-ui.js', ['js/challenge-ui.js', 'text/javascript; charset=utf-8']],
   ['js/api.js', ['js/api.js', 'text/javascript; charset=utf-8']],
   ['js/permute.js', ['js/permute.js', 'text/javascript; charset=utf-8']],
 ]);
