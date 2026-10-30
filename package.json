@@ -8,8 +8,12 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "playwright test",
     "serve": "npx --yes serve@14.2.4 . --listen 3000"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
 }
