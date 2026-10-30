@@ -31,9 +31,11 @@ function distinctPermutations(digits) {
 /** Return the sorted union of valid 3- and 4-character padded permutations. */
 export function permuteDexNumber(input) {
   validateDexNumber(input);
+  const digits = String(input);
+  const widths = digits.length === 4 ? [4] : [3, 4];
   const results = new Set();
-  for (const width of [3, 4]) {
-    for (const permutation of distinctPermutations(String(input).padStart(width, '0'))) {
+  for (const width of widths) {
+    for (const permutation of distinctPermutations(digits.padStart(width, '0'))) {
       const number = Number(permutation);
       if (number >= MIN_DEX && number <= MAX_DEX) results.add(number);
     }

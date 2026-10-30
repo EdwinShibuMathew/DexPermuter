@@ -237,8 +237,15 @@ test('UI handles debounce, Enter, stale responses, independent retries, validati
       const copy = descendants(grid).find(node => node.className === 'copy-button');
       copy.focus();
       await copy.trigger('click');
-      assert.match(copied, /^#0001 Pokémon 1\nTypes: Electric\nAbilities: Static\nHidden ability: None\nBST: 300/);
-      assert.match(copied, /Evolution: Pokemon 1 does not evolve/);
+      assert.equal(copied, [
+        '#0001 Pokémon 1',
+        'Types: Electric',
+        'Abilities: Static',
+        'Hidden ability: None',
+        'BST: 300 (HP 50 / Atk 50 / Def 50 / SpA 50 / SpD 50 / Spe 50)',
+        'Evolution: Pokemon 1 does not evolve.',
+        'Evolution requirements can vary by game.',
+      ].join('\n'));
       assert.equal(mockDocument.activeElement, copy);
       assert.equal(copy.dataset.copied, 'true');
       await flush(2400);

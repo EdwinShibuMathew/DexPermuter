@@ -515,6 +515,18 @@ test('normalizes names, type order, abilities, six stats, and BST', async () => 
   assert.match(data.evolution, /Ivysaur at level 16/);
 });
 
+test('normalizes shuffled stats and empty abilities without changing the resource', async () => {
+  const pokemon = { ...pokemonFixture(), stats: pokemonFixture().stats.reverse(), abilities: [] };
+  const original = structuredClone(pokemon);
+  const client = createApiClient({ storage: null, fetchImpl: async url => response(url.includes('/pokemon/') ? pokemon : fixtureFor(url)) });
+  const data = await client.getPokemon(1);
+  assert.deepEqual(data.stats, STAT_KEYS.map((key, index) => ({ key, value: [45, 49, 49, 65, 65, 45][index] })));
+  assert.equal(data.bst, 318);
+  assert.deepEqual(data.abilities, []);
+  assert.deepEqual(data.hiddenAbilities, []);
+  assert.deepEqual(pokemon, original);
+});
+
 test('species or chain failure preserves core data and can be retried', async () => {
   for (const failedEndpoint of ['/pokemon-species/', '/evolution-chain/']) {
     let fail = true;

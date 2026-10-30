@@ -4,6 +4,28 @@ const API_ROOT = 'https://pokeapi.co/api/v2/';
 const CACHE_PREFIX = 'dexpermuter:v1:';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+const EVOLUTION_TRIGGERS = {
+  shed: 'with a spare party slot and a Poké Ball when Nincada evolves',
+  spin: 'by spinning',
+  'tower-of-darkness': 'by completing the Tower of Darkness',
+  'tower-of-waters': 'by completing the Tower of Waters',
+  'three-critical-hits': 'after landing three critical hits in one battle',
+  'take-damage': 'after taking the required damage',
+  'agile-style-move': 'by using the required move in Agile Style',
+  'strong-style-move': 'by using the required move in Strong Style',
+  'recoil-damage': 'after taking the required recoil damage',
+};
+const KNOWN_EVOLUTION_FIELDS = new Set([
+  'trigger', 'item', 'held_item', 'trade_species', 'gender', 'min_level', 'min_happiness',
+  'min_beauty', 'min_affection', 'time_of_day', 'known_move', 'known_move_type', 'location',
+  'region', 'required_pokemon_form', 'evolved_pokemon_form', 'near_special_rock',
+  'needs_multiplayer', 'needs_overworld_rain', 'turn_upside_down', 'party_species',
+  'party_type', 'relative_physical_stats', 'used_move', 'min_move_count', 'min_steps',
+  'min_damage_taken', 'allowed_natures', 'condition_expression', 'version_group', 'is_default',
+]);
+const NAMED_EVOLUTION_CONDITIONS = ['trigger', 'item', 'held_item', 'trade_species', 'known_move', 'known_move_type', 'location', 'region', 'required_pokemon_form', 'evolved_pokemon_form', 'party_species', 'party_type', 'used_move'];
+const PHYSICAL_STAT_RELATIONS = { '-1': 'lower than', 0: 'equal to', 1: 'higher than' };
+
 export const STAT_KEYS = ['hp', 'attack', 'defense', 'special-attack', 'special-defense', 'speed'];
 
 export class ApiError extends Error {
@@ -29,18 +51,7 @@ export function describeEvolutionMethod(detail = {}) {
   } else if (trigger === 'use-item') {
     conditions.push(detail.item ? `using ${displayName(detail.item.name)}` : 'using an evolution item');
   } else {
-    const triggers = {
-      shed: 'with a spare party slot and a Poké Ball when Nincada evolves',
-      spin: 'by spinning',
-      'tower-of-darkness': 'by completing the Tower of Darkness',
-      'tower-of-waters': 'by completing the Tower of Waters',
-      'three-critical-hits': 'after landing three critical hits in one battle',
-      'take-damage': 'after taking the required damage',
-      'agile-style-move': 'by using the required move in Agile Style',
-      'strong-style-move': 'by using the required move in Strong Style',
-      'recoil-damage': 'after taking the required recoil damage',
-    };
-    conditions.push(triggers[trigger] || 'by a special evolution method (check your game)');
+    conditions.push(EVOLUTION_TRIGGERS[trigger] || 'by a special evolution method (check your game)');
     if (detail.min_level != null) conditions.push(`at level ${detail.min_level} or higher`);
   }
   if (detail.item && trigger !== 'use-item') conditions.push(`using ${displayName(detail.item.name)}`);
@@ -64,7 +75,7 @@ export function describeEvolutionMethod(detail = {}) {
   if (detail.party_species) conditions.push(`with ${displayName(detail.party_species.name)} in the party`);
   if (detail.party_type) conditions.push(`with a ${displayName(detail.party_type.name)} Pokémon in the party`);
   if (detail.relative_physical_stats != null) {
-    const relation = { '-1': 'lower than', 0: 'equal to', 1: 'higher than' }[detail.relative_physical_stats];
+    const relation = PHYSICAL_STAT_RELATIONS[detail.relative_physical_stats];
     conditions.push(relation ? `with Attack ${relation} Defense` : 'with the required Attack/Defense relationship');
   }
   if (detail.used_move) {
@@ -82,16 +93,8 @@ export function describeEvolutionMethod(detail = {}) {
     const chance = expression.percentage_chance;
     conditions.push(`with an additional ${variables || 'game-specific'} condition${chance != null ? ` (${chance}% of cases)` : ''}`);
   }
-  const knownFields = new Set([
-    'trigger', 'item', 'held_item', 'trade_species', 'gender', 'min_level', 'min_happiness',
-    'min_beauty', 'min_affection', 'time_of_day', 'known_move', 'known_move_type', 'location',
-    'region', 'required_pokemon_form', 'evolved_pokemon_form', 'near_special_rock',
-    'needs_multiplayer', 'needs_overworld_rain', 'turn_upside_down', 'party_species',
-    'party_type', 'relative_physical_stats', 'used_move', 'min_move_count', 'min_steps',
-    'min_damage_taken', 'allowed_natures', 'condition_expression', 'version_group', 'is_default',
-  ]);
   const hasUnknownCondition = Object.entries(detail).some(([key, value]) =>
-    !knownFields.has(key) && value != null && value !== false && value !== '' && (!Array.isArray(value) || value.length > 0));
+    !KNOWN_EVOLUTION_FIELDS.has(key) && value != null && value !== false && value !== '' && (!Array.isArray(value) || value.length > 0));
   if (hasUnknownCondition) conditions.push('with additional requirements (check your game)');
   return conditions.join(', ');
 }
@@ -132,49 +135,77 @@ const isNamedResource = value => isObject(value) && isName(value.name);
 
 function validEvolutionDetail(detail) {
   if (!isObject(detail)) return false;
-  const namedConditions = ['trigger', 'item', 'held_item', 'trade_species', 'known_move', 'known_move_type', 'location', 'region', 'required_pokemon_form', 'evolved_pokemon_form', 'party_species', 'party_type', 'used_move'];
-  if (!namedConditions.every(key => detail[key] == null || isNamedResource(detail[key]))) return false;
+  if (!NAMED_EVOLUTION_CONDITIONS.every(key => detail[key] == null || isNamedResource(detail[key]))) return false;
   if (detail.allowed_natures != null && (!Array.isArray(detail.allowed_natures) || !detail.allowed_natures.every(isNamedResource))) return false;
   const expression = detail.condition_expression;
   return expression == null || (isObject(expression) && (expression.variables == null ||
     (Array.isArray(expression.variables) && expression.variables.every(isNamedResource))));
 }
 
+function readStatValue(stats, key) {
+  const value = stats.find(stat => stat?.stat?.name === key)?.base_stat;
+  if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
+  return value;
+}
+
+function validatePokemonData(data) {
+  if (!isName(data.name) || !Array.isArray(data.stats) || !Array.isArray(data.types) || !Array.isArray(data.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
+  for (const key of STAT_KEYS) readStatValue(data.stats, key);
+  if (!data.types.length || !data.types.every(entry => isNamedResource(entry?.type) && Number.isInteger(entry.slot)) ||
+      !data.abilities.every(entry => isNamedResource(entry?.ability) && Number.isInteger(entry.slot) && typeof entry.is_hidden === 'boolean')) {
+    throw new ApiError('Pokémon types or abilities are incomplete. Please retry.');
+  }
+}
+
+function validateSpeciesData(data) {
+  if (!isName(data.name) || !Array.isArray(data.names) || !data.names.every(entry => isName(entry?.name) && isNamedResource(entry.language)) ||
+      !Object.hasOwn(data, 'evolution_chain') || (data.evolution_chain !== null && !isName(data.evolution_chain?.url))) {
+    throw new ApiError('Species data is incomplete. Please retry.');
+  }
+  if (data.evolution_chain && !/^\/api\/v2\/evolution-chain\/[^/]+\/?$/.test(new URL(resourceUrl(data.evolution_chain.url)).pathname)) {
+    throw new ApiError('Species evolution data is incomplete. Please retry.');
+  }
+}
+
+function validateEvolutionData(data) {
+  const links = [data.chain];
+  while (links.length) {
+    const link = links.pop();
+    if (!isNamedResource(link?.species) || !Array.isArray(link.evolves_to) ||
+        (link.evolution_details != null && (!Array.isArray(link.evolution_details) || !link.evolution_details.every(validEvolutionDetail)))) {
+      throw new ApiError('Evolution data is incomplete. Please retry.');
+    }
+    links.push(...link.evolves_to);
+  }
+  // The formatter also checks optional conditions that can contain nested lists.
+  try { summarizeEvolution(data); } catch { throw new ApiError('Evolution data is incomplete. Please retry.'); }
+}
+
 /** Check only the resource fields this application consumes, not the full API schema. */
 function validateResource(url, data) {
   if (!isObject(data)) throw new ApiError('PokéAPI returned invalid data. Please retry.');
   const family = new URL(url).pathname.match(/^\/api\/v2\/(pokemon|pokemon-species|evolution-chain)\/[^/]+\/?$/)?.[1];
-  if (family === 'pokemon') {
-    if (!isName(data.name) || !Array.isArray(data.stats) || !Array.isArray(data.types) || !Array.isArray(data.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
-    for (const key of STAT_KEYS) {
-      const value = data.stats.find(stat => stat?.stat?.name === key)?.base_stat;
-      if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
-    }
-    if (!data.types.length || !data.types.every(entry => isNamedResource(entry?.type) && Number.isInteger(entry.slot)) ||
-        !data.abilities.every(entry => isNamedResource(entry?.ability) && Number.isInteger(entry.slot) && typeof entry.is_hidden === 'boolean')) {
-      throw new ApiError('Pokémon types or abilities are incomplete. Please retry.');
-    }
-  } else if (family === 'pokemon-species') {
-    if (!isName(data.name) || !Array.isArray(data.names) || !data.names.every(entry => isName(entry?.name) && isNamedResource(entry.language)) ||
-        !Object.hasOwn(data, 'evolution_chain') || (data.evolution_chain !== null && !isName(data.evolution_chain?.url))) {
-      throw new ApiError('Species data is incomplete. Please retry.');
-    }
-    if (data.evolution_chain && !/^\/api\/v2\/evolution-chain\/[^/]+\/?$/.test(new URL(resourceUrl(data.evolution_chain.url)).pathname)) {
-      throw new ApiError('Species evolution data is incomplete. Please retry.');
-    }
-  } else if (family === 'evolution-chain') {
-    const links = [data.chain];
-    while (links.length) {
-      const link = links.pop();
-      if (!isNamedResource(link?.species) || !Array.isArray(link.evolves_to) ||
-          (link.evolution_details != null && (!Array.isArray(link.evolution_details) || !link.evolution_details.every(validEvolutionDetail)))) {
-        throw new ApiError('Evolution data is incomplete. Please retry.');
-      }
-      links.push(...link.evolves_to);
-    }
-    // The formatter also checks optional conditions that can contain nested lists.
-    try { summarizeEvolution(data); } catch { throw new ApiError('Evolution data is incomplete. Please retry.'); }
-  }
+  if (family === 'pokemon') validatePokemonData(data);
+  else if (family === 'pokemon-species') validateSpeciesData(data);
+  else if (family === 'evolution-chain') validateEvolutionData(data);
+}
+
+function normalizePokemon(number, pokemon, species) {
+  if (!pokemon.name || !Array.isArray(pokemon.stats) || !Array.isArray(pokemon.types) || !Array.isArray(pokemon.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
+  const stats = STAT_KEYS.map(key => ({ key, value: readStatValue(pokemon.stats, key) }));
+  const name = species?.names?.find(entry => entry.language?.name === 'en')?.name || displayName(species?.name || pokemon.name);
+  const abilities = [...pokemon.abilities].sort((a, b) => a.slot - b.slot);
+  return {
+    number,
+    name,
+    types: [...pokemon.types].sort((a, b) => a.slot - b.slot).map(entry => entry.type.name),
+    abilities: abilities.filter(entry => !entry.is_hidden).map(entry => displayName(entry.ability.name)),
+    hiddenAbilities: abilities.filter(entry => entry.is_hidden).map(entry => displayName(entry.ability.name)),
+    stats,
+    bst: stats.reduce((sum, stat) => sum + stat.value, 0),
+    evolution: 'Evolution information is unavailable.',
+    evolutionError: null,
+  };
 }
 
 /** Dependencies can be supplied for offline tests; browser defaults need no setup. */
@@ -351,27 +382,8 @@ export function createApiClient({
       : await Promise.allSettled(resources.map(resource => fetchResource(resource, { signal })));
     signal?.throwIfAborted();
     if (pokemonResult.status === 'rejected') throw pokemonResult.reason;
-    const pokemon = pokemonResult.value;
-    if (!pokemon.name || !Array.isArray(pokemon.stats) || !Array.isArray(pokemon.types) || !Array.isArray(pokemon.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
-    const stats = STAT_KEYS.map(key => {
-      const value = pokemon.stats.find(stat => stat?.stat?.name === key)?.base_stat;
-      if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
-      return { key, value };
-    });
     const species = speciesResult.status === 'fulfilled' ? speciesResult.value : null;
-    const name = species?.names?.find(entry => entry.language?.name === 'en')?.name || displayName(species?.name || pokemon.name);
-    const abilities = [...pokemon.abilities].sort((a, b) => a.slot - b.slot);
-    const data = {
-      number,
-      name,
-      types: [...pokemon.types].sort((a, b) => a.slot - b.slot).map(entry => entry.type.name),
-      abilities: abilities.filter(entry => !entry.is_hidden).map(entry => displayName(entry.ability.name)),
-      hiddenAbilities: abilities.filter(entry => entry.is_hidden).map(entry => displayName(entry.ability.name)),
-      stats,
-      bst: stats.reduce((sum, stat) => sum + stat.value, 0),
-      evolution: 'Evolution information is unavailable.',
-      evolutionError: null,
-    };
+    const data = normalizePokemon(number, pokemonResult.value, species);
     try {
       if (speciesResult.status === 'rejected') throw speciesResult.reason;
       if (!species?.evolution_chain?.url) throw new ApiError('No evolution chain was provided by PokéAPI.');
