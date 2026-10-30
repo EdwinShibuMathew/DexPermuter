@@ -107,6 +107,7 @@ test('switching searches drops obsolete work and clearing cancels remaining requ
   await page.goto('./');
   await submit(page, '12');
   await expect.poll(() => api.calls.length).toBe(4);
+  expect((await api.probe()).maximum).toBe(4);
   const old = [...api.calls];
   api.hold(resource => old.includes(resource));
   await submit(page, '34');
@@ -114,18 +115,26 @@ test('switching searches drops obsolete work and clearing cancels remaining requ
   const obsolete = new Set([12, 21, 102, 120, 201, 210, 1002, 1020]);
   expect(api.calls.slice(4).some(resource => obsolete.has(Number(resource.split('/')[1])))).toBe(false);
   await expect.poll(async () => (await api.probe()).requests.filter(entry => entry.aborted).length).toBe(4);
+  await expect.poll(async () => (await api.probe()).active).toBe(0);
   let probe = await api.probe();
   expect(probe.requests.filter(entry => entry.aborted)).toHaveLength(4);
-  expect(probe.maximum).toBe(4);
+  expect(probe.requests.every(entry => entry.done)).toBe(true);
+  // Chromium can announce replacement requests before the obsolete requests'
+  // terminal events. Check each held cohort instead of that transient overlap.
+  const searchStart = api.calls.length;
+  const requestStart = probe.requests.length;
   api.hold(() => true);
   await submit(page, '56');
   await expect.poll(async () => (await api.probe()).active).toBe(4);
+  expect(api.calls).toHaveLength(searchStart + 4);
   await page.getByLabel('YOUR STARTING POKÉDEX NUMBER').fill('');
   await page.clock.runFor(250);
   await expect(page.locator('.pokemon-card')).toHaveCount(0);
   await expect.poll(async () => (await api.probe()).active).toBe(0);
   probe = await api.probe();
-  expect(probe.maximum).toBe(4);
+  expect(api.calls).toHaveLength(searchStart + 4);
+  expect(probe.requests.slice(requestStart)).toHaveLength(4);
+  expect(probe.requests.slice(requestStart).every(entry => entry.done && entry.aborted)).toBe(true);
   await expect(page.locator('#results-status')).not.toContainText('failed');
 });
 

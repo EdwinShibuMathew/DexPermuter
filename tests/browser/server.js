@@ -23,7 +23,9 @@ const server = createServer(async (request, response) => {
       streams.set(id, response);
       response.on('close', () => { if (streams.get(id) === response) streams.delete(id); });
       response.on('error', () => { if (streams.get(id) === response) streams.delete(id); });
-      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      // Chromium can report ERR_ABORTED after successful no-store stream reads:
+      // https://github.com/microsoft/playwright/issues/42742
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
       response.flushHeaders();
       response.write('{"id":');
       return;

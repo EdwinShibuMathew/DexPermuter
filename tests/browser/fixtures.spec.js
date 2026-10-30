@@ -100,7 +100,7 @@ test('the probe includes five pending bodies and preserves native response reade
   const probe = await api.probe();
   expect(probe.maximum).toBe(5);
   expect(probe.requests).toHaveLength(5);
-  expect(probe.requests.every(entry => entry.done && !entry.aborted)).toBe(true);
+  expect(probe.requests).toEqual(expect.arrayContaining(urls.map(url => ({ url, done: true, aborted: false }))));
 });
 
 test('aborting after headers records every cancellation and retains native body errors', async ({ page, api, baseURL }) => {
