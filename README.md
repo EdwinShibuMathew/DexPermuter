@@ -30,7 +30,7 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
-The test runner starts and stops its own local server under `/DexPermuter/`, matching the GitHub Pages path. Tests cover validation, rendering, clipboard behavior, cache recovery, and request cancellation across searches. Test execution makes no requests to the live PokéAPI. The application itself still needs no install or build step.
+The test runner starts and stops its own local server under `/DexPermuter/`, matching the GitHub Pages path. Tests cover validation, rendering, clipboard behavior, cache recovery, and request cancellation across searches. Fixture self-tests verify offline interception after failures and track real streamed response bodies through completion or cancellation. Test execution makes no requests to the live PokéAPI. The application itself still needs no install or build step.
 
 Pull requests and pushes to `main` run the Node and browser suites as separate jobs. Both must succeed before Pages deployment. Browser failures retain an HTML report, screenshots, and traces as Actions artifacts for seven days. To view a local report, run `npx playwright show-report`.
 

@@ -113,6 +113,7 @@ test('switching searches drops obsolete work and clearing cancels remaining requ
   await expect(page.locator('#results-status')).toContainText('6 loaded');
   const obsolete = new Set([12, 21, 102, 120, 201, 210, 1002, 1020]);
   expect(api.calls.slice(4).some(resource => obsolete.has(Number(resource.split('/')[1])))).toBe(false);
+  await expect.poll(async () => (await api.probe()).requests.filter(entry => entry.aborted).length).toBe(4);
   let probe = await api.probe();
   expect(probe.requests.filter(entry => entry.aborted)).toHaveLength(4);
   expect(probe.maximum).toBe(4);
@@ -188,7 +189,7 @@ test('shared evolution requests keep their original timeout after a handoff', as
   await expect(page.getByRole('button', { name: 'Retry evolution', exact: true })).toHaveCount(4);
   await expect(page.locator('.evolution .card-error')).toHaveText(Array(4).fill('PokéAPI took too long to respond. Please retry.'));
   expect(api.calls).toHaveLength(12);
-  expect((await api.probe()).requests.filter(entry => entry.aborted)).toHaveLength(4);
+  await expect.poll(async () => (await api.probe()).requests.filter(entry => entry.aborted).length).toBe(4);
 });
 
 test('shows a non-blocking message when both clipboard methods fail', async ({ page, api }) => {
