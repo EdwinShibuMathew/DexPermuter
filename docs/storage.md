@@ -154,8 +154,10 @@ The investigated source had **75 Node cases and 64 Chromium cases**. A fresh exa
 main-source validation copy under ignored `node_modules/.cache/` reruns the Node
 baseline without overwriting the existing workspace changes. The CI PR run reruns
 the complete browser baseline against that same main source plus these additive
-files. New coverage adds seven Node contracts and one prototype per Chromium project:
-expected totals **82 Node / 66 Chromium**. See the PR checks for authoritative counts.
+files. New coverage adds seven Node contracts and one prototype per Chromium project.
+[CI run 41135411992](https://github.com/EdwinShibuMathew/DexPermuter/actions/runs/41135411992)
+passed **82 Node / 66 Chromium**, with no failures or skips. The original
+75 Node / 64 Chromium cases all remain present and passed.
 
 `tests/fixtures/storage-sizes.json` records eight public upstream resource blob IDs,
 the pinned upstream commit and normalized UTF-8 payload sizes. Source:
@@ -183,6 +185,17 @@ memory transfer/removal and IndexedDB transaction-commit/removal (three samples)
 contain counts, estimated workload and timings only. They never read team contents.
 No performance threshold is asserted: CI timing is noisy. This prototype excludes
 production validators, bounded batching, contention, full budgets and recovery.
+
+Measured on Ubuntu 24.04 GitHub Actions with Node 24 and pinned Playwright 1.64.1,
+run 41135411992 (2026-10-30). Eight records total **719,021 payload bytes**.
+Database open is one sample; other columns show the range of three samples.
+The first persistent sample inserts records; the remaining two replace the same
+synthetic keys. These are primitive timings, not a migration throughput benchmark.
+
+| Chromium project | Open (ms) | Parse startup (ms) | Memory transfer/removal (ms) | IDB commit/removal (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Desktop 1280 × 800 | 2.8 | 0.5 | 0.4–1.1 | 6.8–8.7 |
+| Mobile emulation 390 × 844 | 2.6 | 0.4–0.5 | 0.4–1.2 | 7.1–8.5 |
 
 Budget suitability, production startup/migration latency, persistent quota isolation,
 Firefox/WebKit behavior, physical Safari macOS/iOS and Chrome Android remain
