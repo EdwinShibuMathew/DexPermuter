@@ -101,25 +101,29 @@ async function copyText(text) {
   }
 }
 
-function renderCard(card, data, search, retry) {
-  card.removeAttribute('aria-busy');
-  card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
-  card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || '#a8b3c3');
-  const heading = element('h3', '', data.name);
+function renderTypes(values) {
   const types = element('div', 'types');
-  for (const type of data.types) {
+  for (const type of values) {
     const pill = element('span', 'type-badge', displayName(type));
     const color = TYPE_COLORS[type] || '#a8b3c3';
     pill.style.setProperty('--type-color', color);
     pill.style.color = readableTextColor(color);
     types.append(pill);
   }
+  return types;
+}
+
+function renderAbilities(data) {
   const abilities = element('dl', 'abilities');
   for (const [label, values] of [['Abilities', data.abilities], ['Hidden ability', data.hiddenAbilities]]) {
     const group = element('div');
     group.append(element('dt', '', label), element('dd', '', values.join(' / ') || 'None'));
     abilities.append(group);
   }
+  return abilities;
+}
+
+function renderStats(data) {
   const stats = element('div', 'stats');
   const statsHeader = element('div', 'stats-header');
   statsHeader.append(element('span', 'section-label', 'Base stat total'), element('span', 'bst', String(data.bst)));
@@ -136,6 +140,10 @@ function renderCard(card, data, search, retry) {
     row.append(element('span', 'stat-label', label), track, element('span', 'stat-value', String(stat.value)));
     stats.append(row);
   }
+  return stats;
+}
+
+function renderEvolution(data, retry) {
   const evolution = element('div', 'evolution');
   evolution.append(element('h4', 'section-label', 'Evolution family'), element('p', '', data.evolution));
   if (data.evolutionError) {
@@ -144,6 +152,10 @@ function renderCard(card, data, search, retry) {
     button.addEventListener('click', retry);
     evolution.append(element('p', 'card-error', data.evolutionError), button);
   }
+  return evolution;
+}
+
+function renderCopyControls(data) {
   const copy = element('button', 'copy-button', '⧉  Copy to clipboard');
   copy.type = 'button';
   copy.setAttribute('aria-label', `Copy summary for ${data.name}`);
@@ -172,7 +184,18 @@ function renderCard(card, data, search, retry) {
       }, 2400);
     }
   });
-  card.replaceChildren(cardTop(data.number, search.original), heading, types, abilities, stats, evolution, copy, copyStatus);
+  return [copy, copyStatus];
+}
+
+function renderCard(card, data, search, retry) {
+  card.removeAttribute('aria-busy');
+  card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
+  card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || '#a8b3c3');
+  const heading = element('h3', '', data.name);
+  card.replaceChildren(
+    cardTop(data.number, search.original), heading, renderTypes(data.types),
+    renderAbilities(data), renderStats(data), renderEvolution(data, retry), ...renderCopyControls(data),
+  );
 }
 
 function announce(search) {
