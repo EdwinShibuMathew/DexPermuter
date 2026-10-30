@@ -26,6 +26,7 @@ export const ownership = [
   ['dexpermuter:v1:https://pokeapi.co.evil.test/api/v2/pokemon/1/', false],
   ['dexpermuter:v1:https://user@pokeapi.co/api/v2/pokemon/1/', false],
   ['dexpermuter:v1:https://pokeapi.co/api/v2/pokemon/1/#fragment', false],
+  ['dexpermuter:v1:https://pokeapi.co/api/v2/pokemon/1/#', false],
   ['dexpermuter:v1:https://pokeapi.co/api/v2/../pokemon/1/', false],
   ['dexpermuter:v1:https://pokeapi.co:443/api/v2/pokemon/1/', false],
   ['unrelated', false],

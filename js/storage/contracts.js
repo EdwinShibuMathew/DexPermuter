@@ -109,7 +109,8 @@ export function legacyCacheUrl(key) {
   const suffix = key.slice(LEGACY_CACHE_PREFIX.length);
   try {
     const url = new URL(suffix);
-    if (url.origin !== 'https://pokeapi.co' || url.username || url.password || url.hash ||
+    url.hash = '';
+    if (url.origin !== 'https://pokeapi.co' || url.username || url.password ||
         !url.pathname.startsWith('/api/v2/') || url.href !== suffix) return null;
     return url.href;
   } catch { return null; }
