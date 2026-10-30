@@ -140,41 +140,70 @@ function validEvolutionDetail(detail) {
     (Array.isArray(expression.variables) && expression.variables.every(isNamedResource))));
 }
 
+function readStatValue(stats, key) {
+  const value = stats.find(stat => stat?.stat?.name === key)?.base_stat;
+  if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
+  return value;
+}
+
+function validatePokemonData(data) {
+  if (!isName(data.name) || !Array.isArray(data.stats) || !Array.isArray(data.types) || !Array.isArray(data.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
+  for (const key of STAT_KEYS) readStatValue(data.stats, key);
+  if (!data.types.length || !data.types.every(entry => isNamedResource(entry?.type) && Number.isInteger(entry.slot)) ||
+      !data.abilities.every(entry => isNamedResource(entry?.ability) && Number.isInteger(entry.slot) && typeof entry.is_hidden === 'boolean')) {
+    throw new ApiError('Pokémon types or abilities are incomplete. Please retry.');
+  }
+}
+
+function validateSpeciesData(data) {
+  if (!isName(data.name) || !Array.isArray(data.names) || !data.names.every(entry => isName(entry?.name) && isNamedResource(entry.language)) ||
+      !Object.hasOwn(data, 'evolution_chain') || (data.evolution_chain !== null && !isName(data.evolution_chain?.url))) {
+    throw new ApiError('Species data is incomplete. Please retry.');
+  }
+  if (data.evolution_chain && !/^\/api\/v2\/evolution-chain\/[^/]+\/?$/.test(new URL(resourceUrl(data.evolution_chain.url)).pathname)) {
+    throw new ApiError('Species evolution data is incomplete. Please retry.');
+  }
+}
+
+function validateEvolutionData(data) {
+  const links = [data.chain];
+  while (links.length) {
+    const link = links.pop();
+    if (!isNamedResource(link?.species) || !Array.isArray(link.evolves_to) ||
+        (link.evolution_details != null && (!Array.isArray(link.evolution_details) || !link.evolution_details.every(validEvolutionDetail)))) {
+      throw new ApiError('Evolution data is incomplete. Please retry.');
+    }
+    links.push(...link.evolves_to);
+  }
+  // The formatter also checks optional conditions that can contain nested lists.
+  try { summarizeEvolution(data); } catch { throw new ApiError('Evolution data is incomplete. Please retry.'); }
+}
+
 /** Check only the resource fields this application consumes, not the full API schema. */
 function validateResource(url, data) {
   if (!isObject(data)) throw new ApiError('PokéAPI returned invalid data. Please retry.');
   const family = new URL(url).pathname.match(/^\/api\/v2\/(pokemon|pokemon-species|evolution-chain)\/[^/]+\/?$/)?.[1];
-  if (family === 'pokemon') {
-    if (!isName(data.name) || !Array.isArray(data.stats) || !Array.isArray(data.types) || !Array.isArray(data.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
-    for (const key of STAT_KEYS) {
-      const value = data.stats.find(stat => stat?.stat?.name === key)?.base_stat;
-      if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
-    }
-    if (!data.types.length || !data.types.every(entry => isNamedResource(entry?.type) && Number.isInteger(entry.slot)) ||
-        !data.abilities.every(entry => isNamedResource(entry?.ability) && Number.isInteger(entry.slot) && typeof entry.is_hidden === 'boolean')) {
-      throw new ApiError('Pokémon types or abilities are incomplete. Please retry.');
-    }
-  } else if (family === 'pokemon-species') {
-    if (!isName(data.name) || !Array.isArray(data.names) || !data.names.every(entry => isName(entry?.name) && isNamedResource(entry.language)) ||
-        !Object.hasOwn(data, 'evolution_chain') || (data.evolution_chain !== null && !isName(data.evolution_chain?.url))) {
-      throw new ApiError('Species data is incomplete. Please retry.');
-    }
-    if (data.evolution_chain && !/^\/api\/v2\/evolution-chain\/[^/]+\/?$/.test(new URL(resourceUrl(data.evolution_chain.url)).pathname)) {
-      throw new ApiError('Species evolution data is incomplete. Please retry.');
-    }
-  } else if (family === 'evolution-chain') {
-    const links = [data.chain];
-    while (links.length) {
-      const link = links.pop();
-      if (!isNamedResource(link?.species) || !Array.isArray(link.evolves_to) ||
-          (link.evolution_details != null && (!Array.isArray(link.evolution_details) || !link.evolution_details.every(validEvolutionDetail)))) {
-        throw new ApiError('Evolution data is incomplete. Please retry.');
-      }
-      links.push(...link.evolves_to);
-    }
-    // The formatter also checks optional conditions that can contain nested lists.
-    try { summarizeEvolution(data); } catch { throw new ApiError('Evolution data is incomplete. Please retry.'); }
-  }
+  if (family === 'pokemon') validatePokemonData(data);
+  else if (family === 'pokemon-species') validateSpeciesData(data);
+  else if (family === 'evolution-chain') validateEvolutionData(data);
+}
+
+function normalizePokemon(number, pokemon, species) {
+  if (!pokemon.name || !Array.isArray(pokemon.stats) || !Array.isArray(pokemon.types) || !Array.isArray(pokemon.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
+  const stats = STAT_KEYS.map(key => ({ key, value: readStatValue(pokemon.stats, key) }));
+  const name = species?.names?.find(entry => entry.language?.name === 'en')?.name || displayName(species?.name || pokemon.name);
+  const abilities = [...pokemon.abilities].sort((a, b) => a.slot - b.slot);
+  return {
+    number,
+    name,
+    types: [...pokemon.types].sort((a, b) => a.slot - b.slot).map(entry => entry.type.name),
+    abilities: abilities.filter(entry => !entry.is_hidden).map(entry => displayName(entry.ability.name)),
+    hiddenAbilities: abilities.filter(entry => entry.is_hidden).map(entry => displayName(entry.ability.name)),
+    stats,
+    bst: stats.reduce((sum, stat) => sum + stat.value, 0),
+    evolution: 'Evolution information is unavailable.',
+    evolutionError: null,
+  };
 }
 
 /** Dependencies can be supplied for offline tests; browser defaults need no setup. */
@@ -351,27 +380,8 @@ export function createApiClient({
       : await Promise.allSettled(resources.map(resource => fetchResource(resource, { signal })));
     signal?.throwIfAborted();
     if (pokemonResult.status === 'rejected') throw pokemonResult.reason;
-    const pokemon = pokemonResult.value;
-    if (!pokemon.name || !Array.isArray(pokemon.stats) || !Array.isArray(pokemon.types) || !Array.isArray(pokemon.abilities)) throw new ApiError('Pokémon data is incomplete. Please retry.');
-    const stats = STAT_KEYS.map(key => {
-      const value = pokemon.stats.find(stat => stat?.stat?.name === key)?.base_stat;
-      if (!Number.isInteger(value) || value < 0) throw new ApiError('Pokémon stats are incomplete. Please retry.');
-      return { key, value };
-    });
     const species = speciesResult.status === 'fulfilled' ? speciesResult.value : null;
-    const name = species?.names?.find(entry => entry.language?.name === 'en')?.name || displayName(species?.name || pokemon.name);
-    const abilities = [...pokemon.abilities].sort((a, b) => a.slot - b.slot);
-    const data = {
-      number,
-      name,
-      types: [...pokemon.types].sort((a, b) => a.slot - b.slot).map(entry => entry.type.name),
-      abilities: abilities.filter(entry => !entry.is_hidden).map(entry => displayName(entry.ability.name)),
-      hiddenAbilities: abilities.filter(entry => entry.is_hidden).map(entry => displayName(entry.ability.name)),
-      stats,
-      bst: stats.reduce((sum, stat) => sum + stat.value, 0),
-      evolution: 'Evolution information is unavailable.',
-      evolutionError: null,
-    };
+    const data = normalizePokemon(number, pokemonResult.value, species);
     try {
       if (speciesResult.status === 'rejected') throw speciesResult.reason;
       if (!species?.evolution_chain?.url) throw new ApiError('No evolution chain was provided by PokéAPI.');
