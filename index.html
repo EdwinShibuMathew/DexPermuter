@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <meta name="description" content="Shuffle Pokédex digits into your next Pokémon challenge. Compare types, abilities, stats, and evolutions, then copy a stream-ready summary.">
-    <title>DexPermuter — Shuffle your next challenge</title>
+    <meta name="description" content="Shuffle Pokédex digits into your next Pokémon team. Compare types, abilities, stats, and evolutions, then copy a stream-ready summary.">
+    <title>DexPermuter — Shuffle your next team</title>
     <link rel="stylesheet" href="./css/styles.css">
     <script type="module" src="./js/app.js"></script>
   </head>
@@ -16,14 +16,14 @@
         <span class="brand-mark" aria-hidden="true">↔</span>
         <span>Dex<span class="accent">Permuter</span></span>
       </a>
-      <span class="header-note">THE SHUFFLED DIGIT CHALLENGE TOOL</span>
+      <span class="header-note">SHUFFLE DIGITS. BUILD YOUR TEAM.</span>
     </header>
 
     <main class="shell">
       <section class="intro" aria-labelledby="page-title">
         <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> SMALL SHUFFLE. NEW POSSIBILITIES.</p>
         <h1 id="page-title">Same digits.<br><span class="accent">Different destiny.</span></h1>
-        <p class="intro-copy">Turn one Pokédex number into your next challenge lineup.<br class="wide-only"> Every valid digit shuffle. All the details. Ready for your stream.</p>
+        <p class="intro-copy">Find your next team member by shuffling Pokédex digits.<br class="wide-only"> Every valid digit shuffle. All the details. Ready for your stream.</p>
 
         <form id="dex-form" novalidate>
           <label for="dex-input">YOUR STARTING POKÉDEX NUMBER</label>
@@ -44,49 +44,55 @@
         </div>
       </section>
 
-      <section id="challenge-workspace" class="challenge-workspace" aria-labelledby="challenges-heading">
-        <div class="challenge-heading">
-          <h2 id="challenges-heading">Your saved challenges</h2>
-          <button id="save-challenge" type="button" disabled>Save challenge</button>
+      <section id="team-workspace" class="team-workspace" aria-labelledby="teams-heading">
+        <div class="team-heading">
+          <h2 id="teams-heading">Your team</h2>
+          <button id="new-team" type="button">New team</button>
         </div>
-        <p class="challenge-help">Keep a shortlist and a note for your next episode. Saved in this browser; download a backup to move devices or protect your work.</p>
-        <div id="latest-challenge" class="latest-challenge"></div>
-        <form id="challenge-naming" class="challenge-naming" hidden>
-          <label for="challenge-name">Challenge name</label>
-          <input id="challenge-name" type="text" maxlength="80" required autocomplete="off">
-          <div class="challenge-actions">
-            <button id="challenge-name-submit" type="submit">Save challenge</button>
-            <button id="cancel-challenge-name" type="button">Cancel</button>
+        <p class="team-help">Add Pokémon from any search. Your team stays with you while you explore. Saved in this browser; download a backup to keep a copy.</p>
+        <div id="latest-team" class="latest-team"></div>
+        <form id="team-naming" class="team-naming" hidden>
+          <label for="team-name">Team name</label>
+          <input id="team-name" type="text" maxlength="80" required autocomplete="off">
+          <div class="team-actions">
+            <button id="team-name-submit" type="submit">Save name</button>
+            <button id="cancel-team-name" type="button">Cancel</button>
           </div>
         </form>
-        <div id="challenge-editor" hidden>
-          <h3 id="active-challenge-name"></h3>
-          <p id="shortlist-count" class="challenge-help"></p>
-          <label for="challenge-note">Episode note</label>
-          <textarea id="challenge-note" rows="3" maxlength="1000" aria-describedby="note-hint"></textarea>
-          <p id="note-hint" class="challenge-help">Up to 1,000 characters. Shortlist changes save immediately; notes save after a short pause.</p>
+        <div id="team-editor" hidden>
+          <div class="team-heading">
+            <h3 id="active-team-name" tabindex="-1"></h3>
+            <button id="rename-team" type="button">Rename team</button>
+          </div>
+          <p id="member-count" class="team-help"></p>
+          <p id="team-search-context" class="team-help"></p>
+          <ol id="team-roster" class="team-roster" aria-label="Team members"></ol>
+          <p id="team-empty" class="team-help">No members yet. Search for a number and add a Pokémon below.</p>
+          <label for="team-note">Team notes</label>
+          <textarea id="team-note" rows="3" maxlength="1000" aria-describedby="note-hint"></textarea>
+          <p id="note-hint" class="team-help">Up to 1,000 characters. Membership changes save immediately; notes save after a short pause.</p>
         </div>
-        <p id="challenge-status" role="status" aria-live="polite" aria-atomic="true"></p>
-        <p id="challenge-error" class="error-text" role="alert"></p>
-        <p id="challenge-recovery" class="error-text" role="status"></p>
-        <div class="challenge-actions">
-          <button id="retry-challenge-save" type="button" hidden>Retry save</button>
-          <button id="backup-current" type="button" hidden>Download current challenge</button>
+        <p id="team-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <p id="team-error" class="error-text" role="alert"></p>
+        <p id="team-recovery" class="error-text" role="status"></p>
+        <div class="team-actions">
+          <button id="retry-team-save" type="button" hidden>Retry save</button>
+          <button id="backup-current" type="button" hidden>Download current team</button>
         </div>
-        <div id="challenge-conflict" class="challenge-actions" hidden>
-          <button id="reload-challenge" type="button">Reload saved challenge</button>
-          <button id="copy-challenge" type="button">Save edits as a copy</button>
+        <div id="team-conflict" class="team-actions" hidden>
+          <button id="reload-team" type="button">Reload saved team</button>
+          <button id="copy-team" type="button">Save edits as a copy</button>
         </div>
-        <details class="challenge-library">
-          <summary>View saved challenges</summary>
-          <ul id="challenge-list"></ul>
+        <details class="team-library">
+          <summary>Saved teams</summary>
+          <ul id="team-list"></ul>
         </details>
-        <div class="challenge-actions backup-actions">
-          <button id="export-challenges" type="button">Download backup</button>
-          <button id="import-challenges" type="button">Restore backup</button>
-          <input id="challenge-backup-file" type="file" accept="application/json,.json" aria-label="Challenge backup file" hidden>
+        <div class="team-actions backup-actions">
+          <button id="export-teams" type="button">Download backup</button>
+          <button id="import-teams" type="button">Restore backup</button>
+          <input id="team-backup-file" type="file" accept="application/json,.json" aria-label="Team backup file" hidden>
         </div>
-        <p id="backup-status" class="challenge-help" role="status"></p>
+        <p id="backup-status" class="team-help" role="status"></p>
       </section>
 
       <section id="results" class="results" aria-labelledby="results-heading" tabindex="-1">
@@ -98,7 +104,7 @@
         <div id="empty-state" class="empty-state">
           <span class="empty-symbol" aria-hidden="true">0 1 ↔ 1 0</span>
           <h3>A new lineup is a few digits away.</h3>
-          <p>Enter a National Pokédex number above.<br>We’ll find the shuffles. You make the challenge.</p>
+          <p>Enter a National Pokédex number above.<br>We’ll find the shuffles. You make the team.</p>
         </div>
       </section>
 
