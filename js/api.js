@@ -342,10 +342,13 @@ export function createApiClient({
   async function getPokemon(number, { signal } = {}) {
     validateDexNumber(number);
     signal?.throwIfAborted();
-    const [pokemonResult, speciesResult] = await Promise.allSettled([
-      fetchResource(`pokemon/${number}/`, { signal }),
-      fetchResource(`pokemon-species/${number}/`, { signal }),
-    ]);
+    const resources = [`pokemon/${number}/`, `pokemon-species/${number}/`];
+    const cached = resources.map(resource => readCache(resourceUrl(resource)));
+    // With cached core data, subscribe to evolution before search handoff cancels
+    // the old consumer. Even awaiting fulfilled promises would create a gap.
+    const [pokemonResult, speciesResult] = cached.every(Boolean)
+      ? cached.map(value => ({ status: 'fulfilled', value }))
+      : await Promise.allSettled(resources.map(resource => fetchResource(resource, { signal })));
     signal?.throwIfAborted();
     if (pokemonResult.status === 'rejected') throw pokemonResult.reason;
     const pokemon = pokemonResult.value;

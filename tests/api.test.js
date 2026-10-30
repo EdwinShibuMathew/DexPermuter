@@ -236,6 +236,77 @@ test('getPokemon propagates cancellation during species and evolution loading', 
   }
 });
 
+test('cached core resources retain shared evolution requests through immediate handoff', async t => {
+  for (const stage of ['headers', 'body']) {
+    await t.test(stage, async () => {
+      const first = new AbortController();
+      const second = new AbortController();
+      const started = deferred();
+      const evolution = deferred();
+      let evolutionCalls = 0;
+      let networkSignal;
+      const client = createApiClient({ storage: null, fetchImpl: async (url, { signal }) => {
+        if (!url.includes('/evolution-chain/')) return response(fixtureFor(url));
+        evolutionCalls += 1;
+        networkSignal = signal;
+        const wait = new Promise((resolve, reject) => {
+          const cancel = () => reject(signal.reason);
+          signal.addEventListener('abort', cancel, { once: true });
+          evolution.promise.then(() => {
+            signal.removeEventListener('abort', cancel);
+            resolve({ chain: node('bulbasaur') });
+          });
+        });
+        started.resolve();
+        if (stage === 'headers') return response(await wait);
+        return { ok: true, json: () => wait };
+      } });
+      const old = assert.rejects(client.getPokemon(1, { signal: first.signal }), { name: 'AbortError' });
+      await started.promise;
+      await settle();
+      const current = client.getPokemon(1, { signal: second.signal });
+      try {
+        first.abort();
+        await old;
+        assert.equal(networkSignal.aborted, false);
+        assert.equal(evolutionCalls, 1);
+        evolution.resolve();
+        const data = await current;
+        assert.equal(data.evolutionError, null);
+        assert.match(data.evolution, /does not evolve/);
+        second.abort();
+        assert.equal(networkSignal.aborted, false);
+        assert.equal(evolutionCalls, 1);
+      } finally {
+        second.abort();
+        evolution.resolve();
+        await Promise.allSettled([current]);
+      }
+    });
+  }
+});
+
+test('getPokemon refetches missing or expired core entries alongside a valid cached resource', async () => {
+  for (const resource of ['pokemon/1/', 'pokemon-species/1/']) {
+    for (const state of ['missing', 'expired']) {
+      const storage = memoryStorage();
+      for (const other of ['pokemon/1/', 'pokemon-species/1/', 'evolution-chain/1/']) {
+        if (other === resource && state === 'missing') continue;
+        storage.setItem(cacheKey(other), JSON.stringify({ savedAt: other === resource ? 500 : 1000, data: fixtureFor(root + other) }));
+      }
+      const calls = [];
+      const client = createApiClient({ storage, now: () => 1001, cacheTtlMs: 100, fetchImpl: async url => {
+        calls.push(url);
+        return response(fixtureFor(url));
+      } });
+      const data = await client.getPokemon(1);
+      assert.equal(data.bst, 318);
+      assert.equal(data.evolutionError, null);
+      assert.deepEqual(calls, [root + resource]);
+    }
+  }
+});
+
 test('expired entries are reclaimed after quota exhaustion and caching works across reloads', async () => {
   const storage = memoryStorage();
   const save = storage.setItem;
