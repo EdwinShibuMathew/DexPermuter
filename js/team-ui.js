@@ -75,13 +75,11 @@ export function createTeamWorkspace({ root, onSelectionChange, inspectMember, st
     row.inspect = button('Inspect', () => {
       const expanded = detail.hidden;
       detail.hidden = !expanded;
-      row.inspect.textContent = expanded ? 'Hide details' : 'Inspect';
-      row.inspect.setAttribute('aria-expanded', String(expanded));
+      renderRoster();
       if (!expanded) { row.controller?.abort(); return; }
       row.controller = new AbortController();
       inspectMember(detail, number, row.controller.signal);
     });
-    row.inspect.setAttribute('aria-expanded', 'false');
     row.up = button('Move up', () => changeMember(number, 'up'));
     row.down = button('Move down', () => changeMember(number, 'down'));
     row.remove = button('Remove', () => changeMember(number, 'remove'));
@@ -106,7 +104,11 @@ export function createTeamWorkspace({ root, onSelectionChange, inspectMember, st
       row.title.textContent = `Member ${index + 1}`;
       const name = names.get(member.number) || member.name;
       row.name.textContent = `${name || 'Pokémon'} · #${String(member.number).padStart(4, '0')}`;
-      for (const [control, verb] of [[row.inspect, 'Inspect'], [row.up, 'Move up'], [row.down, 'Move down'], [row.remove, 'Remove']]) {
+      const expanded = !row.detail.hidden;
+      const inspectionAction = expanded ? 'Hide details' : 'Inspect';
+      row.inspect.textContent = inspectionAction;
+      row.inspect.setAttribute('aria-expanded', String(expanded));
+      for (const [control, verb] of [[row.inspect, inspectionAction], [row.up, 'Move up'], [row.down, 'Move down'], [row.remove, 'Remove']]) {
         control.setAttribute('aria-label', `${verb} Member ${index + 1}, ${name || 'Pokémon'} #${String(member.number).padStart(4, '0')}`);
       }
       // Keep boundary controls focusable after a move, while making them inert.
@@ -173,7 +175,13 @@ export function createTeamWorkspace({ root, onSelectionChange, inspectMember, st
 
   function persist() {
     clearTimeout(noteTimer);
-    if (!active || !dirty || conflicted) return !dirty && !conflicted;
+    if (!active || !dirty) return !dirty && !conflicted;
+    if (conflicted) {
+      // Pause writes, not local edits: reconcile rows before removal moves focus
+      // and abort inspections for members that no longer belong to this team.
+      renderEditor();
+      return false;
+    }
     notice.textContent = 'Saving…';
     try {
       active = store.save(active, { expectedRaw: baseline });
