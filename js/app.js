@@ -192,11 +192,12 @@ async function loadCard(card, number, search) {
   renderLoading(card, number, search.original);
   const retry = () => loadCard(card, number, search);
   try {
-    const data = await client.getPokemon(number);
+    const data = await client.getPokemon(number, { signal: search.controller.signal });
     if (search.revision !== revision || !card.isConnected) return;
     renderCard(card, data, search, retry);
     search.states.set(number, data.evolutionError ? 'partial' : 'ready');
   } catch (error) {
+    if (error.name === 'AbortError') return;
     if (search.revision !== revision || !card.isConnected) return;
     card.removeAttribute('aria-busy');
     card.setAttribute('aria-label', `${numberLabel(number)} could not load`);
@@ -216,6 +217,7 @@ function runSearch() {
   inputError.textContent = '';
   input.removeAttribute('aria-invalid');
   if (!raw && !badInput) {
+    currentSearch?.controller.abort();
     currentSearch = null;
     grid.replaceChildren();
     badge.textContent = '0';
@@ -229,6 +231,7 @@ function runSearch() {
     if (badInput || !/^\d+$/.test(raw)) throw new Error('Enter a whole number from 1 to 1025.');
     numbers = permuteDexNumber(number);
   } catch (error) {
+    currentSearch?.controller.abort();
     currentSearch = null;
     input.setAttribute('aria-invalid', 'true');
     inputError.textContent = error.message;
@@ -247,7 +250,8 @@ function runSearch() {
     announce(currentSearch);
     return;
   }
-  const search = { original: number, revision, states: new Map(numbers.map(dex => [dex, 'loading'])), cards: new Map() };
+  const previousSearch = currentSearch;
+  const search = { original: number, revision, controller: new AbortController(), states: new Map(numbers.map(dex => [dex, 'loading'])), cards: new Map() };
   currentSearch = search;
   grid.replaceChildren();
   badge.textContent = String(numbers.length);
@@ -258,6 +262,8 @@ function runSearch() {
     grid.append(card);
     loadCard(card, dex, search);
   }
+  // Subscribe the new cards first so overlapping requests keep their consumers.
+  previousSearch?.controller.abort();
 }
 
 input.addEventListener('input', () => {
