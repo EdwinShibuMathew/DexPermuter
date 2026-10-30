@@ -5,6 +5,11 @@ import { TEAM_PREFIX } from '../../js/teams.js';
 const memberButton = (page, number) => page.locator(`#results-grid .team-member-button[data-number="${number}"]`);
 const row = (page, number) => page.locator(`#team-roster > li[data-number="${number}"]`);
 
+// Every scenario must install interception, including tests that only use page.
+test.beforeEach(async ({ api }) => {
+  expect(api.calls).toHaveLength(0);
+});
+
 async function renameTeam(page, name) {
   await page.getByRole('button', { name: 'Rename team', exact: true }).click();
   await page.getByLabel('Team name', { exact: true }).fill(name);
@@ -363,6 +368,124 @@ test('other-tab changes pause autosave and preserve both versions through copy a
   await page.getByRole('button', { name: 'Save edits as a copy', exact: true }).click();
   expect((await records(page))).toHaveLength(2);
   await other.close();
+});
+
+for (const externalChange of ['edit', 'deletion']) {
+  test(`paused autosave still renders additions and removals after an external ${externalChange}`, async ({ page, context }) => {
+    await freezeTime(page);
+    const original = backupRecord('paused-edits', 'Local team');
+    await page.addInitScript(({ prefix, record }) => localStorage.setItem(prefix + record.id, JSON.stringify(record)), { prefix: TEAM_PREFIX, record: original });
+    await page.goto('./');
+    await page.getByRole('button', { name: 'Continue team', exact: true }).click();
+    const other = await context.newPage();
+    await other.goto('./');
+    await other.getByRole('button', { name: 'Continue team', exact: true }).click();
+    if (externalChange === 'edit') {
+      await other.getByLabel('Team notes', { exact: true }).fill('Other tab version');
+      await renameTeam(other, 'Remote team');
+    } else {
+      await openLibrary(other);
+      other.once('dialog', dialog => dialog.accept());
+      await other.locator('#team-list li').getByRole('button', { name: 'Delete', exact: true }).click();
+    }
+    await expect(page.locator('#team-conflict')).toBeVisible();
+    const remoteRaw = await other.evaluate(({ prefix, id }) => localStorage.getItem(prefix + id), { prefix: TEAM_PREFIX, id: original.id });
+
+    await submit(page, '4');
+    await expect(page.locator('#results-status')).toContainText('3 loaded');
+    await memberButton(page, 4).click();
+    await expect(page.locator('#member-count')).toHaveText('2 members');
+    await expect(page.locator('#team-roster > li')).toHaveCount(2);
+    await expect(row(page, 4)).toBeVisible();
+    await expect(memberButton(page, 4).locator('..').locator('.member-badge')).toHaveText('Member 2');
+    await row(page, 1).getByRole('button', { name: /^Remove Member 1,/ }).click();
+    await expect(page.locator('#member-count')).toHaveText('1 member');
+    await expect(row(page, 1)).toHaveCount(0);
+    await expect(row(page, 4).getByRole('button', { name: /^Remove Member 1,/ })).toBeFocused();
+    await expect(memberButton(page, 4)).toHaveAttribute('aria-pressed', 'true');
+    await expect(memberButton(page, 4).locator('..').locator('.member-badge')).toHaveText('Member 1');
+    await expect(page.locator('#team-status')).toContainText('Autosave paused');
+    expect(await page.evaluate(({ prefix, id }) => localStorage.getItem(prefix + id), { prefix: TEAM_PREFIX, id: original.id })).toBe(remoteRaw);
+
+    const pending = await downloadBackup(page, '#backup-current');
+    expect(pending.teams[0].members.map(member => member.number)).toEqual([4]);
+    await page.getByRole('button', { name: 'Save edits as a copy', exact: true }).click();
+    await expect(page.locator('#team-status')).toHaveText('Saved on this device.');
+    await expect(page.locator('#team-conflict')).toBeHidden();
+    const saved = await records(page);
+    expect(saved.find(team => team.id !== original.id).members.map(member => member.number)).toEqual([4]);
+    expect(await page.evaluate(({ prefix, id }) => localStorage.getItem(prefix + id), { prefix: TEAM_PREFIX, id: original.id })).toBe(remoteRaw);
+    expect(saved).toHaveLength(externalChange === 'edit' ? 2 : 1);
+    await other.close();
+  });
+}
+
+test('paused roster edits reorder immediately and removing an inspected member cancels its work', async ({ page, context, api }) => {
+  await freezeTime(page);
+  const original = { ...backupRecord('paused-inspection'), members: [{ number: 1, name: 'Bulbasaur' }, { number: 10, name: 'Caterpie' }] };
+  await page.addInitScript(({ prefix, record }) => localStorage.setItem(prefix + record.id, JSON.stringify(record)), { prefix: TEAM_PREFIX, record: original });
+  api.hold(resource => resource === 'pokemon/1/' || resource === 'pokemon-species/1/');
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Continue team', exact: true }).click();
+  await row(page, 1).getByRole('button', { name: /^Inspect Member 1,/ }).click();
+  await expect.poll(() => api.calls.length).toBe(2);
+  const other = await context.newPage();
+  await other.goto('./');
+  await other.getByRole('button', { name: 'Continue team', exact: true }).click();
+  await renameTeam(other, 'Remote inspection team');
+  await expect(page.locator('#team-conflict')).toBeVisible();
+  const remoteRaw = await other.evaluate(({ prefix, id }) => localStorage.getItem(prefix + id), { prefix: TEAM_PREFIX, id: original.id });
+
+  await submit(page, '4');
+  await expect(page.locator('#results-status')).toContainText('3 loaded');
+  await memberButton(page, 4).click();
+  await expect(page.locator('#member-count')).toHaveText('3 members');
+  const up = row(page, 4).getByRole('button', { name: /^Move up Member/ });
+  await up.focus();
+  await page.keyboard.press('Enter');
+  await expect(up).toBeFocused();
+  expect(await page.locator('#team-roster > li').evaluateAll(nodes => nodes.map(node => Number(node.dataset.number)))).toEqual([1, 4, 10]);
+  await expect(memberButton(page, 4).locator('..').locator('.member-badge')).toHaveText('Member 2');
+  await row(page, 1).getByRole('button', { name: /^Remove Member 1,/ }).click();
+  await expect(row(page, 4).getByRole('button', { name: /^Remove Member 1,/ })).toBeFocused();
+  await expect(page.locator('#team-roster > li > strong')).toHaveText(['Member 1', 'Member 2']);
+  await expect.poll(async () => (await api.probe()).requests.filter(request => request.url.endsWith('/1/') && request.done && request.aborted).length).toBe(2);
+  await api.release();
+  await expect(row(page, 1)).toHaveCount(0);
+  expect(await page.locator('#team-roster > li').evaluateAll(nodes => nodes.map(node => Number(node.dataset.number)))).toEqual([4, 10]);
+  expect(await page.evaluate(({ prefix, id }) => localStorage.getItem(prefix + id), { prefix: TEAM_PREFIX, id: original.id })).toBe(remoteRaw);
+  await page.getByRole('button', { name: 'Save edits as a copy', exact: true }).click();
+  expect((await records(page)).find(team => team.id !== original.id).members.map(member => member.number)).toEqual([4, 10]);
+  await other.close();
+});
+
+test('inspection names match the expanded action through loading, name updates, and reordering', async ({ page, api }) => {
+  const original = { ...backupRecord('inspection-labels'), members: [{ number: 1, name: null }, { number: 4, name: 'Pokémon 4' }] };
+  await page.addInitScript(({ prefix, record }) => localStorage.setItem(prefix + record.id, JSON.stringify(record)), { prefix: TEAM_PREFIX, record: original });
+  api.hold(() => true);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Continue team', exact: true }).click();
+  const control = row(page, 1).locator('button').first();
+  const initialControl = await control.elementHandle();
+  await expect(control).toHaveAccessibleName('Inspect Member 1, Pokémon #0001');
+  await control.click();
+  await expect(control).toHaveText('Hide details');
+  await expect(control).toHaveAttribute('aria-expanded', 'true');
+  await expect(control).toHaveAccessibleName('Hide details Member 1, Pokémon #0001');
+  await api.release();
+  await expect(row(page, 1).locator('h3')).toHaveText('Bulbasaur');
+  await expect(control).toHaveAccessibleName('Hide details Member 1, Bulbasaur #0001');
+  expect(await initialControl.evaluate(node => node.isConnected && document.activeElement === node)).toBe(true);
+  const down = row(page, 1).getByRole('button', { name: /^Move down Member/ });
+  await down.focus();
+  await page.keyboard.press('Enter');
+  await expect(down).toBeFocused();
+  await expect(control).toHaveAccessibleName('Hide details Member 2, Bulbasaur #0001');
+  await control.click();
+  await expect(control).toHaveText('Inspect');
+  await expect(control).toHaveAccessibleName('Inspect Member 2, Bulbasaur #0001');
+  await expect(control).toHaveAttribute('aria-expanded', 'false');
+  await expect(row(page, 1).locator('.member-details')).toBeHidden();
 });
 
 test('new, rename, open and delete keep separate teams and preserve the search', async ({ page }) => {
