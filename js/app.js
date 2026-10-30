@@ -25,6 +25,7 @@ const grid = document.querySelector('#results-grid');
 const badge = document.querySelector('#result-badge');
 const status = document.querySelector('#results-status');
 const empty = document.querySelector('#empty-state');
+const cardContents = new WeakMap();
 let debounceTimer;
 let revision = 0;
 let currentSearch = null;
@@ -82,14 +83,25 @@ function cardTop(number, original) {
   return top;
 }
 
+function renderCardContent(card, number, original, ...children) {
+  let content = cardContents.get(card);
+  if (!content) {
+    content = element('div', 'card-content');
+    // Keep the header and its keyboard-focused shortlist control mounted across
+    // loading, success, failure, and retry. Only the details below it change.
+    card.append(cardTop(number, original), content);
+    cardContents.set(card, content);
+  }
+  content.replaceChildren(...children);
+}
+
 function renderLoading(card, number, original) {
-  card.replaceChildren(cardTop(number, original), element('h3', '', 'Loading Pokémon…'));
-  card.setAttribute('aria-label', `${numberLabel(number)} loading`);
-  card.setAttribute('aria-busy', 'true');
   const decoration = element('div');
   decoration.setAttribute('aria-hidden', 'true');
   decoration.append(element('div', 'loading-bar'), element('div', 'loading-bar short'));
-  card.append(decoration, element('p', 'loading-copy', 'Finding your next possibility.'));
+  renderCardContent(card, number, original, element('h3', '', 'Loading Pokémon…'), decoration, element('p', 'loading-copy', 'Finding your next possibility.'));
+  card.setAttribute('aria-label', `${numberLabel(number)} loading`);
+  card.setAttribute('aria-busy', 'true');
 }
 
 function readableTextColor(hex) {
@@ -232,8 +244,8 @@ function renderCard(card, data, search, retry) {
   card.setAttribute('aria-label', `${numberLabel(data.number)} ${data.name}`);
   card.style.setProperty('--card-accent', TYPE_COLORS[data.types[0]] || FALLBACK_TYPE_COLOR);
   const heading = element('h3', '', data.name);
-  card.replaceChildren(
-    cardTop(data.number, search.original), heading, renderTypes(data.types),
+  renderCardContent(
+    card, data.number, search.original, heading, renderTypes(data.types),
     renderAbilities(data), renderStats(data), renderEvolution(data, retry), ...renderCopyControls(data),
   );
   updateShortlist();
@@ -269,7 +281,7 @@ async function loadCard(card, number, search) {
     const button = element('button', 'retry-button', 'Retry Pokémon');
     button.type = 'button';
     button.addEventListener('click', retry);
-    card.replaceChildren(cardTop(number, search.original), element('h3', '', 'Connection missed.'), element('p', 'card-error', error.message || 'Could not load this Pokémon.'), button);
+    renderCardContent(card, number, search.original, element('h3', '', 'Connection missed.'), element('p', 'card-error', error.message || 'Could not load this Pokémon.'), button);
     search.states.set(number, 'error');
   }
   updateShortlist();
