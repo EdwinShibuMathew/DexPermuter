@@ -1,0 +1,48 @@
+{
+  "source": "PokeAPI/api-data",
+  "ref": "447bd5c378bf87da964bfe4dd7487a7bf1d97cbd",
+  "retrievedOn": "2026-10-30",
+  "method": "Parse official api-data JSON, expand /api/v2/ strings to https://pokeapi.co/api/v2/, compact JSON.stringify, count UTF-8 bytes. Normalized payload sizes, not HTTP transfer sizes.",
+  "samples": [
+    {
+      "resource": "pokemon/1",
+      "sourceBlob": "6b6f8ad88ac068d2cce23658c1d6c029fdf2144a",
+      "payloadBytes": 282699
+    },
+    {
+      "resource": "pokemon/25",
+      "sourceBlob": "f02848ba60df2248f66195613304be7a42f06d42",
+      "payloadBytes": 309106
+    },
+    {
+      "resource": "pokemon/1025",
+      "sourceBlob": "801da9526478102868a4e16d560896ba26bfe7f5",
+      "payloadBytes": 22440
+    },
+    {
+      "resource": "pokemon-species/1",
+      "sourceBlob": "1f518e9cfeeb908934aeec6a6d3368c2c7025aa1",
+      "payloadBytes": 33039
+    },
+    {
+      "resource": "pokemon-species/133",
+      "sourceBlob": "882f684556508bf9f1c412046cc09d164df03889",
+      "payloadBytes": 47697
+    },
+    {
+      "resource": "pokemon-species/1025",
+      "sourceBlob": "0d7165832208e1a6aa5757761734a4e81f55b22b",
+      "payloadBytes": 3423
+    },
+    {
+      "resource": "evolution-chain/1",
+      "sourceBlob": "3bb9b48cf1301aa2ecf2640c493bc3c3d4daddd9",
+      "payloadBytes": 2023
+    },
+    {
+      "resource": "evolution-chain/67",
+      "sourceBlob": "3769d32b6165068056ed2f3f16633ebda2ae13d8",
+      "payloadBytes": 18594
+    }
+  ]
+}
