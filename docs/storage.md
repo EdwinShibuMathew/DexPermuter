@@ -205,12 +205,36 @@ representative integration and real-device QA justify a reviewed change.
 
 ## Delivery and rollback
 
-Use one active PR at a time. After this PR merges and main passes, proceed through
-team adapter, memory policy and native IndexedDB adapter. Activate migration and
-API replacement together (#16 + #17), initially in memory mode, before the broader
-browser/device matrix (#18). #19 owns the static release flag, sanitized counters,
-debug controls, QA evidence and rollback documentation. Enable IndexedDB in a
-separate reviewed release only after those gates pass.
+Use parallel development with ordered, maintainer-reviewed merges. The dependency
+graph in #11 determines when work may start; the merge order below controls
+integration. Keep one focused PR per issue and leave ownership unassigned until a
+team member claims it.
+
+1. Merge the foundation PR (#20, closing #12) after review, then validate main
+   before starting dependent implementation.
+2. Develop #13 (team adapter), #14 (memory policy) and #15 (native IndexedDB
+   adapter) in parallel from validated main against the approved contracts.
+   Merge in that order, update each remaining PR against main, and validate main
+   between merges. Record reviewed contract changes here and in affected issues.
+3. Start #16 after #13/#14/#15 merge and #17 after #14/#15 merge; development may
+   overlap. #16 owns migration and recovery, while #17 owns composition and API
+   wiring. Merge #16 first with startup migration and recovery inactive, then
+   merge #17 with the new integration inactive by default.
+4. #17 introduces the minimum static activation gate; do not defer that gate to
+   #19 because every main merge deploys. While inactive, the existing production
+   path remains in use. Require explicit test configuration to exercise the new
+   path. Once activated, the new path must never write bulk responses to
+   localStorage in either backend mode.
+5. Complete integrated browser/quota validation in #18. #19 then finalizes release
+   controls, sanitized in-memory diagnostics, debug controls, QA evidence and
+   rollback documentation. Activate the new path in memory mode with safe legacy
+   cleanup only after these gates pass, verify the deployed release, then enable
+   IndexedDB in a separate reviewed release.
+
+The activation gate and backend selection are separate: an inactive integration is
+not a memory-only release. Neither merged implementation PRs nor synthetic baseline
+measurements establish production recovery or cross-browser readiness. Keep gaps
+explicit until the integrated and manual device evidence exists.
 
 Rollback selects memory mode while retaining safe legacy cleanup. Never restore
 the bulk localStorage cache writer, delete team records or clear the IndexedDB
